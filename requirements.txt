@@ -1,0 +1,22 @@
+# Core training/eval (local, Mac MPS)
+torch>=2.2
+transformers>=4.44
+sentencepiece>=0.2       # required for DeBERTa-v3's tokenizer (spm.model) — without this,
+                          # transformers mis-parses the tokenizer file via a tiktoken fallback
+protobuf>=4.0             # sentencepiece's Python bindings depend on this
+datasets>=2.20
+accelerate>=0.33
+scikit-learn>=1.5
+numpy
+pandas
+
+# Synthetic data / LLM-red-teamer / LM-judge baseline (Colab or local, via API)
+openai>=1.40          # OpenRouter is OpenAI-API-compatible
+python-dotenv
+
+# Eval / reporting
+matplotlib
+seaborn
+
+# HF Hub upload for artifacts
+huggingface_hub

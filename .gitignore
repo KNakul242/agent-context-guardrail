@@ -1,0 +1,29 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+data/raw/*
+!data/raw/.gitkeep
+models/*.bin
+models/*.safetensors
+models/checkpoint-*/
+wandb/
+.ipynb_checkpoints/
+
+# Standard Python additions
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor/OS
+.vscode/
+.idea/
+*.swp
+
+docs/*
+.claude/*
