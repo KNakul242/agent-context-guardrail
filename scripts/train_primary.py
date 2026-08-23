@@ -55,8 +55,18 @@ device (mps/cuda/cpu) actually produced it.
 import argparse
 import json
 import random
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Portable, environment-independent: `import src...` below only works if the
+# repo root is on sys.path. Locally this happened to work via an ambient
+# PYTHONPATH=. set in the shell -- not something this repo's own setup docs
+# ever specified, and not present in a fresh Colab shell (confirmed:
+# ModuleNotFoundError: No module named 'src' when this script was first run
+# there). Inserting the repo root explicitly makes `python3 scripts/*.py`
+# work identically in any environment, matching every other script here.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.data.io import load_examples_jsonl
 from src.model.train import (

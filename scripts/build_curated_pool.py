@@ -26,8 +26,14 @@ this script.
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
+
+# See scripts/train_primary.py's identical bootstrap for why this is needed:
+# `import src...` requires the repo root on sys.path, which was only true
+# locally via an ambient (undocumented) PYTHONPATH=., not in a fresh shell.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.data.curate import (
     classify_domain,

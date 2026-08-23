@@ -16,6 +16,13 @@ Usage:
 
 import argparse
 import json
+import sys
+from pathlib import Path
+
+# See scripts/train_primary.py's identical bootstrap for why this is needed:
+# `import src...` requires the repo root on sys.path, which was only true
+# locally via an ambient (undocumented) PYTHONPATH=., not in a fresh Colab shell.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.data.io import load_examples_jsonl
 from src.data.schema import Label
