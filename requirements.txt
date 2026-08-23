@@ -6,6 +6,15 @@
 # and reintroduce that exact class of bug, or a new one. Versions below
 # are what this session's fixes were actually verified against.
 torch==2.13.0
+# Do NOT add torchvision here (ISSUE-7, docs/ISSUES.md). This project uses
+# zero torchvision functionality; on Colab it ships pre-installed against
+# Colab's own default torch build, and co-installing our pinned torch==2.13.0
+# without removing torchvision leaves it ABI-incompatible (compiled ops like
+# `nms` fail to register), crashing transformers' model-loading machinery,
+# which transitively imports torchvision.io while resolving
+# DebertaV2ForSequenceClassification. notebooks/colab_train_primary.ipynb's
+# Step 3 explicitly uninstalls it after this file's install step -- don't
+# reverse that by pinning a torchvision version here.
 transformers==5.15.1
 sentencepiece==0.2.2      # required for DeBERTa-v3's tokenizer (spm.model) — without this,
                           # transformers mis-parses the tokenizer file via a tiktoken fallback
