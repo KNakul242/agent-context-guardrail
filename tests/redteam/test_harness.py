@@ -192,3 +192,67 @@ def test_run_escalation_returns_one_trajectory_per_seed_in_the_corpus():
     )
     assert set(trajectories.keys()) == {s.seed_id for s in SEEDS}
     assert all(len(traj) == 2 for traj in trajectories.values())  # should not raise
+
+
+# --- exception isolation + incremental persistence (peer-review finding) ---
+# A live llm_call can fail partway through a real seed corpus (network error,
+# rate limit, malformed response) -- without isolation, one bad call used to
+# crash run_escalation entirely, losing every already-computed trajectory,
+# same failure shape D24/ISSUE-5 already fixed for training checkpoints.
+
+def _llm_call_that_fails_on_nth_call(n: int):
+    state = {"calls": 0}
+
+    def llm_call(prompt: str) -> str:
+        state["calls"] += 1
+        if state["calls"] == n:
+            raise RuntimeError("simulated API failure")
+        return "mutated content"
+
+    return llm_call
+
+
+def test_run_escalation_loop_returns_partial_trajectory_if_llm_call_raises():
+    """A failed mutation call ends that seed's escalation with whatever
+    rounds completed before the failure, rather than propagating and
+    losing the whole trajectory -- the caught rounds so far are still
+    real, usable red-team results."""
+    history = run_escalation_loop(
+        SEEDS[0],
+        predict_fn=_always_predicts(Label.MALICIOUS),  # always caught -> always escalates
+        llm_call=_llm_call_that_fails_on_nth_call(1),  # fails on the very first escalate() call
+        max_rounds=5,
+    )
+    assert len(history) == 1  # round 0 (the original seed) still recorded
+    assert not history[0].bypassed
+
+
+def test_run_escalation_isolates_one_seeds_llm_failure_from_the_rest_of_the_corpus():
+    """The real fix: a bad call on seed 1 must not prevent seed 2's
+    trajectory from being computed and returned."""
+    trajectories = run_escalation(
+        SEEDS,
+        predict_fn=_always_predicts(Label.MALICIOUS),
+        llm_call=_llm_call_that_fails_on_nth_call(1),  # fails on the first call, i.e. seed 0's first round
+        max_rounds=2,
+    )
+    assert set(trajectories.keys()) == {s.seed_id for s in SEEDS}
+    assert len(trajectories[SEEDS[0].seed_id]) == 1  # truncated by the failure
+    assert len(trajectories[SEEDS[1].seed_id]) == 2  # unaffected, completed normally
+
+
+def test_run_escalation_calls_on_seed_done_incrementally_not_only_at_the_end():
+    """Incremental persistence hook (mirrors run_training's on_epoch_end,
+    src/model/train.py) -- lets a caller (scripts/escalate_redteam.py)
+    write harvested bypasses to disk as each seed finishes, so a crash
+    partway through a real multi-seed run doesn't lose already-completed
+    seeds' results."""
+    calls = []
+    run_escalation(
+        SEEDS,
+        predict_fn=_always_predicts(Label.MALICIOUS),
+        llm_call=_stub_llm_call_recording([]),
+        max_rounds=1,
+        on_seed_done=lambda seed_id, trajectory: calls.append(seed_id),
+    )
+    assert set(calls) == {s.seed_id for s in SEEDS}

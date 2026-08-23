@@ -39,6 +39,26 @@ def recall_at_fpr(y_true: Sequence[int], y_scores: Sequence[float], max_fpr: flo
     return float(qualifying_tpr.max())
 
 
+def threshold_at_fpr(y_true: Sequence[int], y_scores: Sequence[float], max_fpr: float) -> float:
+    """The actual score cutoff that achieves recall_at_fpr's reported
+    recall -- recall_at_fpr() answers "how good is the best achievable
+    point," this answers "what threshold gets you there." Needed because
+    scripts/evaluate.py's headline recall@1%-FPR number and
+    scripts/run_redteam.py's --threshold defaulted to two unrelated
+    decision boundaries (0.5 has no connection to the 1%-FPR operating
+    point) -- a red-team bypass rate measured at the wrong threshold
+    answers a different question than the eval report's headline metric,
+    which matters directly for D7's ModernBERT gate (peer-review finding).
+    Same qualifying-prefix logic as recall_at_fpr, returning the threshold
+    at the point of max tpr within that prefix instead of the tpr itself."""
+    fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+    qualifying = fpr <= max_fpr
+    qualifying_tpr = tpr[qualifying]
+    qualifying_thresholds = thresholds[qualifying]
+    best_index = qualifying_tpr.argmax()
+    return float(qualifying_thresholds[best_index])
+
+
 def false_positive_rate(y_true: Sequence[int], y_pred: Sequence[int]) -> float:
     """FP / (FP + TN). Called with a hard-negative-only subset's
     (y_true, y_pred) to get docs/specs/DEVELOPMENT_RULES.md's "FPR on the

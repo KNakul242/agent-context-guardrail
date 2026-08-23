@@ -7,6 +7,7 @@ from src.eval.metrics import (
     recall_at_fpr,
     roc_auc,
     segment_by_category,
+    threshold_at_fpr,
 )
 
 # Hand-checked against sklearn.metrics.roc_curve directly (see docs/DECISIONS.md
@@ -29,6 +30,33 @@ def test_recall_at_fpr_wider_budget():
 
 def test_recall_at_fpr_full_budget():
     assert recall_at_fpr(LABELS, SCORES, max_fpr=1.0) == pytest.approx(1.0)
+
+
+# threshold_at_fpr: peer-review finding -- run_redteam.py/evaluate.py both
+# defaulted to an arbitrary --threshold 0.5 with no connection to the
+# recall@1%-FPR operating point (D6's headline comparison metric). This is
+# the function that closes that gap: recovers the actual score cutoff that
+# achieves a given max_fpr, so a red-team run can be pointed at the same
+# decision boundary the eval report's headline number describes.
+
+def test_threshold_at_fpr_matches_the_operating_point_recall_at_fpr_reports():
+    """threshold_at_fpr and recall_at_fpr must describe the same point on
+    the ROC curve -- scoring y_scores against threshold_at_fpr's returned
+    cutoff (score >= threshold -> predicted positive) must reproduce a
+    recall matching recall_at_fpr's own reported value."""
+    threshold = threshold_at_fpr(LABELS, SCORES, max_fpr=0.3)
+    y_pred = [1 if s >= threshold else 0 for s in SCORES]
+    positives = [(t, p) for t, p in zip(LABELS, y_pred) if t == 1]
+    recall = sum(1 for t, p in positives if p == 1) / len(positives)
+    assert recall == pytest.approx(recall_at_fpr(LABELS, SCORES, max_fpr=0.3))
+
+
+def test_threshold_at_fpr_zero_percent():
+    assert threshold_at_fpr(LABELS, SCORES, max_fpr=0.01) == pytest.approx(0.5)
+
+
+def test_threshold_at_fpr_wider_budget():
+    assert threshold_at_fpr(LABELS, SCORES, max_fpr=0.3) == pytest.approx(0.35)
 
 
 def test_f1_perfect_predictions():

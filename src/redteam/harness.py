@@ -14,7 +14,7 @@ call, not deterministic logic.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from src.data.schema import ContentSourceType, Example, InjectionTechnique, Label
 from src.eval.metrics import bypass_rate, segment_by_category
@@ -140,7 +140,15 @@ def run_escalation_loop(
         history.append(result)
         if result.bypassed:
             return history
-        mutated_content = escalate(current, history, llm_call)
+        # Peer-review finding: a live llm_call can fail mid-corpus (network
+        # error, rate limit, malformed response). Without this, one bad
+        # call used to propagate and lose every round already computed for
+        # this seed -- the caught rounds so far are still real, usable
+        # red-team results, so return them rather than raise.
+        try:
+            mutated_content = escalate(current, history, llm_call)
+        except Exception:
+            return history
         current = RedTeamSeed(
             seed_id=f"{seed.seed_id}-escalate-r{round_num + 1}",
             technique=seed.technique,
@@ -154,9 +162,26 @@ def run_escalation(
     predict_fn: PredictFn,
     llm_call: LlmCallFn,
     max_rounds: int = 5,
+    on_seed_done: Optional[Callable[[str, List[RedTeamResult]], None]] = None,
 ) -> Dict[str, List[RedTeamResult]]:
     """Runs the escalation loop across a full seed corpus. Returns
     {seed.seed_id: trajectory} -- callers that only want confirmed bypasses
     can flatten every trajectory's results through harvest_bypasses(),
-    exactly as with a plain run_seeds() result list."""
-    return {seed.seed_id: run_escalation_loop(seed, predict_fn, llm_call, max_rounds) for seed in seeds}
+    exactly as with a plain run_seeds() result list.
+
+    on_seed_done(seed_id, trajectory), if given, is called after every
+    seed's escalation completes (peer-review finding, mirrors
+    src/model/train.py's run_training on_epoch_end) -- lets a caller
+    (scripts/escalate_redteam.py) persist harvested bypasses incrementally
+    to disk, so a crash partway through a real multi-seed run doesn't lose
+    already-completed seeds' results. run_escalation_loop's own per-round
+    exception isolation already keeps one seed's llm_call failure from
+    stopping the corpus; this is the second half -- surviving a failure
+    that isn't caught there (e.g. inside predict_fn itself)."""
+    trajectories: Dict[str, List[RedTeamResult]] = {}
+    for seed in seeds:
+        trajectory = run_escalation_loop(seed, predict_fn, llm_call, max_rounds)
+        trajectories[seed.seed_id] = trajectory
+        if on_seed_done is not None:
+            on_seed_done(seed.seed_id, trajectory)
+    return trajectories
