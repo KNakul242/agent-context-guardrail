@@ -1,29 +1,35 @@
-# Core training/eval (local, Mac MPS)
-torch>=2.2
-transformers>=4.44
-sentencepiece>=0.2       # required for DeBERTa-v3's tokenizer (spm.model) — without this,
+# Core training/eval (local, Mac MPS). Exact-pinned, not floor-pinned
+# (torch>=2.2 etc.) -- ISSUE-3 (docs/ISSUES.md) was CAUSED by an unpinned-
+# version default-behavior change (transformers>=4.44 started auto-loading
+# a hub checkpoint's stored dtype). A fresh Colab pip install with only
+# floors could resolve a different version than the locally-verified one
+# and reintroduce that exact class of bug, or a new one. Versions below
+# are what this session's fixes were actually verified against.
+torch==2.13.0
+transformers==5.15.1
+sentencepiece==0.2.2      # required for DeBERTa-v3's tokenizer (spm.model) — without this,
                           # transformers mis-parses the tokenizer file via a tiktoken fallback
-protobuf>=4.0             # sentencepiece's Python bindings depend on this
-datasets>=2.20
-accelerate>=0.33
-scikit-learn>=1.5
-numpy
-pandas
+protobuf==7.36.0          # sentencepiece's Python bindings depend on this
+datasets==5.0.1
+accelerate>=0.33          # not yet installed/exercised locally -- floor only, not verified
+scikit-learn==1.9.0
+numpy==2.4.6
+pandas==3.0.5
 
 # Synthetic data / LLM-red-teamer / LM-judge baseline (Colab or local, via API)
-openai>=1.40          # OpenRouter is OpenAI-API-compatible
-python-dotenv
+openai==3.3.1          # OpenRouter/Gemini both OpenAI-API-compatible
+python-dotenv==1.2.3
 
 # Eval / reporting
-matplotlib
-seaborn
+matplotlib             # not yet installed/exercised locally -- floor only, not verified
+seaborn                 # not yet installed/exercised locally -- floor only, not verified
 
 # Testing (TDD discipline for deterministic code, per docs/specs/DEVELOPMENT_RULES.md)
-pytest
+pytest==9.1.1
 
 # microsoft/BIPIA's AutoPIABuilder dependencies (third_party/BIPIA, D19)
-nltk
-jsonlines
+nltk==3.10.3
+jsonlines==4.0.0
 
 # HF Hub upload for artifacts
-huggingface_hub
+huggingface_hub==1.28.0

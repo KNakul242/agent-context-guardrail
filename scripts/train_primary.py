@@ -37,10 +37,19 @@ ISSUE-5 (docs/ISSUES.md, flagged by peer review): the checkpoint used to
 be saved exactly once, after the entire epoch loop returned -- a failure
 late in a multi-hour run (this session already hit an MPS OOM and an
 AdamW NaN) would lose the whole run with nothing recoverable. Every epoch
-now saves a checkpoint + manifest.json to the same output dir, overwriting
-the previous epoch's save -- the dir always holds the latest complete
-epoch's weights, recoverable at any interruption point, not an
-all-or-nothing bet on the run finishing cleanly.
+now saves a checkpoint + manifest.json, recoverable at any interruption
+point, not an all-or-nothing bet on the run finishing cleanly.
+
+ISSUE-6 (docs/ISSUES.md, correcting ISSUE-5's first draft): each epoch
+writes to its own <checkpoint_dir>/epoch_N/ subdirectory rather than all
+epochs overwriting one shared path -- save_pretrained() writes several
+files (config.json, model.safetensors, tokenizer files) and isn't atomic
+as a whole, so an interrupted write to a shared path could corrupt the
+directory while destroying the last known-good epoch's state too. Also in
+this pass: torch.manual_seed() is now called before model construction
+(the classifier/pooler head's random init was previously unseeded
+regardless of --seed), and every checkpoint's manifest.json records which
+device (mps/cuda/cpu) actually produced it.
 """
 
 import argparse
@@ -55,7 +64,9 @@ from src.model.train import (
     TrainingRunConfig,
     assert_self_authored_gate,
     build_model_and_tokenizer,
+    epoch_checkpoint_subdir,
     resolve_checkpoint_dir,
+    resolve_device,
     run_training,
 )
 
@@ -102,14 +113,30 @@ def main():
         success_criterion=args.success_criterion,
     )
 
-    model, tokenizer = build_model_and_tokenizer(model_config)
+    # Peer-review finding: torch's global RNG was never seeded anywhere in
+    # this codebase -- the classifier/pooler head's random init came from
+    # whatever state torch's RNG happened to be in, unreproducible run to
+    # run even with the same --seed. Seeding here, immediately before
+    # build_model_and_tokenizer constructs the model, is what actually
+    # makes run_config.seed cover the whole run, not just batch order.
+    device = resolve_device(model_config)
+    print(f"resolved device: {device}")
+    model, tokenizer = build_model_and_tokenizer(model_config, seed=args.seed)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     def save_checkpoint(epoch: int, loss_history_so_far):
-        model.save_pretrained(checkpoint_dir, safe_serialization=True)
-        tokenizer.save_pretrained(checkpoint_dir)
+        # Each epoch gets its own subdirectory, never overwriting a prior
+        # epoch's -- save_pretrained() isn't atomic (writes config.json,
+        # model.safetensors, tokenizer files separately); an interrupted
+        # write to a shared path could corrupt it while destroying the last
+        # known-good epoch's state (docs/ISSUES.md ISSUE-6 correction).
+        epoch_dir = epoch_checkpoint_subdir(checkpoint_dir, epoch)
+        epoch_dir.mkdir(parents=True, exist_ok=True)
+        model.save_pretrained(epoch_dir, safe_serialization=True)
+        tokenizer.save_pretrained(epoch_dir)
         manifest = {
             "written_at_utc": datetime.now(timezone.utc).isoformat(),
+            "device": device,
             "completed_epochs": epoch + 1,
             "total_epochs": args.epochs,
             "limit": args.limit,
@@ -123,22 +150,24 @@ def main():
             "loss_history": loss_history_so_far,
             "success_criterion": run_config.success_criterion,
         }
-        with open(checkpoint_dir / "manifest.json", "w") as f:
+        with open(epoch_dir / "manifest.json", "w") as f:
             json.dump(manifest, f, indent=2)
-        print(f"  epoch {epoch + 1}/{args.epochs} done, loss={loss_history_so_far[-1]:.4f} -- checkpoint saved to {checkpoint_dir}")
+        print(f"  epoch {epoch + 1}/{args.epochs} done, loss={loss_history_so_far[-1]:.4f} -- checkpoint saved to {epoch_dir}")
+        return epoch_dir
 
     epoch_loss_history = []
+    last_epoch_dir = [None]  # mutable cell so on_epoch_end's closure can update it
 
     def on_epoch_end(epoch: int, mean_loss: float) -> None:
         epoch_loss_history.append(mean_loss)
-        save_checkpoint(epoch, epoch_loss_history)
+        last_epoch_dir[0] = save_checkpoint(epoch, epoch_loss_history)
 
     result = run_training(model, tokenizer, examples, model_config, run_config, on_epoch_end=on_epoch_end)
 
     print(f"loss history: {result.loss_history}")
     print(f"success criterion: {run_config.success_criterion}")
     print(f"self-authored examples merged into this run: {len(self_authored)}")
-    print(f"final checkpoint + manifest.json saved to {checkpoint_dir}")
+    print(f"final checkpoint + manifest.json saved to {last_epoch_dir[0]}")
 
 
 if __name__ == "__main__":

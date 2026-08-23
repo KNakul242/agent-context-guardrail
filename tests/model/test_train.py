@@ -69,6 +69,40 @@ def test_build_model_and_tokenizer_pins_float32():
     config = ModelConfig(backbone="microsoft/deberta-v3-small")
     model, tokenizer = build_model_and_tokenizer(config)
     assert next(model.parameters()).dtype == torch.float32
+
+
+def test_build_model_and_tokenizer_seed_makes_classifier_head_init_reproducible():
+    """Peer-review finding: torch's global RNG is never seeded anywhere in
+    this codebase -- TrainingRunConfig.seed only feeds random.Random(seed)
+    for batch-shuffle order (iterate_batches), never torch.manual_seed().
+    The classifier/pooler head's random init comes from whatever torch's
+    global RNG state happens to be, unseeded, on every run -- meaning
+    DEVELOPMENT_RULES.md's DoD ("Run is reproducible: seed fixed") wasn't
+    actually satisfied for the one thing most likely to matter (a model
+    that came within a hair of total collapse this session). Two
+    build_model_and_tokenizer calls with the same seed must produce an
+    identical classifier.weight init."""
+    config = ModelConfig(backbone="hf-internal-testing/tiny-random-DebertaV2Model")
+    model_a, _ = build_model_and_tokenizer(config, seed=42)
+    model_b, _ = build_model_and_tokenizer(config, seed=42)
+    assert torch.equal(model_a.classifier.weight, model_b.classifier.weight)
+
+
+def test_build_model_and_tokenizer_different_seeds_give_different_init():
+    """The flip side of the reproducibility check -- confirms the seed
+    argument is actually doing something, not just present and ignored."""
+    config = ModelConfig(backbone="hf-internal-testing/tiny-random-DebertaV2Model")
+    model_a, _ = build_model_and_tokenizer(config, seed=1)
+    model_b, _ = build_model_and_tokenizer(config, seed=2)
+    assert not torch.equal(model_a.classifier.weight, model_b.classifier.weight)
+
+
+def test_build_model_and_tokenizer_seed_is_optional():
+    """Every existing caller in this test file calls build_model_and_tokenizer
+    with no seed -- must not break."""
+    config = ModelConfig(backbone="hf-internal-testing/tiny-random-DebertaV2Model")
+    model, tokenizer = build_model_and_tokenizer(config)
+    assert model is not None
     assert tokenizer is not None
 
 
@@ -239,6 +273,22 @@ def test_resolve_checkpoint_dir_run_id_ignored_when_output_dir_explicit():
     must not silently append onto it."""
     result = resolve_checkpoint_dir(output_dir_arg="custom/dir", limit=64, run_id="ignored")
     assert result == Path("custom/dir")
+
+
+def test_epoch_checkpoint_subdir_nests_under_the_base_dir_by_epoch_number():
+    """ISSUE-6 correction (docs/ISSUES.md): every epoch's save_pretrained()
+    originally overwrote the SAME checkpoint_dir in place. save_pretrained
+    is not atomic (it writes several files: config.json, model.safetensors,
+    tokenizer files) -- an interrupted write to epoch 3 could corrupt the
+    directory while destroying the last known-good state (epoch 2), with
+    no way to recover either. Separate per-epoch directories sidestep this
+    entirely: a bad write to epoch_3/ can't touch epoch_1/ or epoch_2/ at
+    all, since they're different directories. 1-indexed (epoch_1, not
+    epoch_0) to match the human-readable "completed_epochs" field already
+    in manifest.json."""
+    from src.model.train import epoch_checkpoint_subdir
+    assert epoch_checkpoint_subdir(Path("models/primary"), epoch=0) == Path("models/primary/epoch_1")
+    assert epoch_checkpoint_subdir(Path("models/primary"), epoch=2) == Path("models/primary/epoch_3")
 
 
 def test_resolve_checkpoint_dir_run_id_ignored_for_full_runs():

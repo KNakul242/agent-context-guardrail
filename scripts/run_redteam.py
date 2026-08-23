@@ -12,7 +12,7 @@ unimplemented until there's a trained model to mutate seeds against, which
 this script is what produces the results that loop consumes next.
 
 Usage:
-    python3 scripts/run_redteam.py --checkpoint models/primary
+    python3 scripts/run_redteam.py --checkpoint models/primary/epoch_3
 """
 
 import argparse

@@ -14,7 +14,7 @@ seed, and that's worth an explicit, separate invocation rather than an
 implicit cost added to every red-team run.
 
 Usage:
-    python3 scripts/escalate_redteam.py --checkpoint models/primary [--max-rounds N]
+    python3 scripts/escalate_redteam.py --checkpoint models/primary/epoch_3 [--max-rounds N]
 """
 
 import argparse

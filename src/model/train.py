@@ -70,6 +70,18 @@ DEFAULT_FULL_RUN_CHECKPOINT_DIR = Path("models/primary")
 DEFAULT_SMOKE_TEST_CHECKPOINT_DIR = Path("models/smoke_test")
 
 
+def epoch_checkpoint_subdir(base_dir: Path, epoch: int) -> Path:
+    """1-indexed (epoch=0 -> epoch_1) to match manifest.json's human-readable
+    "completed_epochs" field. Each epoch gets its own directory rather than
+    all epochs overwriting one shared path -- save_pretrained() writes
+    several files (config.json, model.safetensors, tokenizer files) and is
+    not atomic as a whole; an interrupted write to a shared path could
+    corrupt the directory while destroying the last known-good epoch's
+    state, with nothing left to recover (docs/ISSUES.md ISSUE-6 correction,
+    caught by peer review after the original overwrite-in-place design)."""
+    return base_dir / f"epoch_{epoch + 1}"
+
+
 def resolve_checkpoint_dir(output_dir_arg: Optional[str], limit: Optional[int], run_id: Optional[str] = None) -> Path:
     """An explicit output_dir_arg always wins (run_id is ignored in that
     case -- an explicit dir is a deliberate, specific choice). Otherwise: a
@@ -125,7 +137,24 @@ class TrainingRunResult:
     loss_history: List[float] = field(default_factory=list)  # mean loss per epoch
 
 
-def build_model_and_tokenizer(config: ModelConfig):
+def build_model_and_tokenizer(config: ModelConfig, seed: Optional[int] = None):
+    """seed, if given, is applied via torch.manual_seed() (+
+    torch.cuda.manual_seed_all() when CUDA is present) BEFORE from_pretrained
+    constructs the model -- this is the only point in the pipeline where it
+    matters. The classifier/pooler head's random init happens inside
+    from_pretrained itself; TrainingRunConfig.seed (used elsewhere, in
+    iterate_batches) only ever controlled batch-shuffle order via a separate
+    random.Random(seed) instance, never torch's own global RNG. Without
+    this, DEVELOPMENT_RULES.md's DoD ("Run is reproducible: seed fixed")
+    wasn't actually satisfied for the one thing most consequential to
+    reproduce -- confirmed by peer review during this session, the model
+    came within a hair of total collapse (docs/ISSUES.md ISSUE-3) on an
+    init nobody could have reproduced to debug."""
+    if seed is not None:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+
     tokenizer = AutoTokenizer.from_pretrained(config.backbone)
     model = AutoModelForSequenceClassification.from_pretrained(
         config.backbone,

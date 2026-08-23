@@ -11,7 +11,7 @@ since only NotInject's construction methodology actually verifies that
 property row-by-row.
 
 Usage:
-    python3 scripts/evaluate.py --checkpoint models/primary --split data/processed/val.jsonl
+    python3 scripts/evaluate.py --checkpoint models/primary/epoch_3 --split data/processed/val.jsonl
 """
 
 import argparse
