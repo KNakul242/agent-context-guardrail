@@ -18,5 +18,12 @@ python-dotenv
 matplotlib
 seaborn
 
+# Testing (TDD discipline for deterministic code, per docs/specs/DEVELOPMENT_RULES.md)
+pytest
+
+# microsoft/BIPIA's AutoPIABuilder dependencies (third_party/BIPIA, D19)
+nltk
+jsonlines
+
 # HF Hub upload for artifacts
 huggingface_hub

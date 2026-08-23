@@ -4,12 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A take-home assignment (`docs/specs/PROBLEM_STATEMENT.md`,
-verbatim, ground truth). Track 1 (Agentic Tool-Call Guardrail): train a
-detector for **indirect prompt injection (IPI)** hidden in tool outputs
-(files, webpages, API responses) that an LLM agent reads mid-task.
-Malicious/dangerous tool-call detection is an in-scope stretch extension,
-built on the same schema, only after the IPI pipeline is done.
+An assignment (`docs/specs/PROBLEM_STATEMENT.md`, verbatim, ground
+truth — the original brief names the assigning company; per
+`docs/specs/VISION.md` that name is deliberately not repeated elsewhere in
+this repo). The chosen track: train a detector for **indirect prompt
+injection (IPI)** hidden in tool outputs (files, webpages, API responses)
+that an LLM agent reads mid-task. Malicious/dangerous tool-call detection is
+an in-scope stretch extension, built on the same schema, only after the IPI
+pipeline is done.
 
 **Read the docs before writing code — they are not background reading, they
 govern how work in this repo is supposed to proceed:**
@@ -34,11 +36,40 @@ proceeding** — do not silently build a workaround. See "Flagging drift" in
 
 ## Current state
 
-Only `src/data/schema.py` is implemented; the repo is at Phase 0 (Data
-Foundation, `docs/specs/IMPLEMENTATION_PLAN.md`). `data/{raw,processed,redteam}/`
-are empty (gitkept). No model/eval/redteam code exists yet. Phase 0 ends at a
-**hard gate**: a data summary report must be reviewed and D13 (primary model
-size, parked) resolved in `docs/DECISIONS.md` before any Phase 1 branch opens.
+On `feature/data-foundation-public`, Phase 0 (Data Foundation,
+`docs/specs/IMPLEMENTATION_PLAN.md`). **Track 0A (agent-led) is done**:
+all four settled-pool public sources pulled/schema-mapped/validated
+(`src/data/sources/{notinject,prodnull,malmasabi,bipia}.py`), eval metrics
+(`src/eval/metrics.py`), the D8a aggregation module
+(`src/model/aggregation.py`), the red-team harness skeleton
+(`src/redteam/harness.py`), and the training script scaffold
+(`src/model/train.py`, config-driven backbone) all exist with passing
+tests (`tests/`, 77 tests, `pytest`).
+
+**D13 is resolved: primary backbone is DeBERTa-v3-small (142M)** (see
+`docs/DECISIONS.md` D13). Composition pass complete — the raw 117,460-row
+bulk pool was curated down to `data/processed/curated_pool.jsonl` (13,032
+rows, exactly 6,516 malicious / 6,516 benign), via `src/data/curate.py`'s
+stratified-sampling/coherence-filter functions. Full derivation, per-domain
+breakdowns, and the license-provenance finding that drove excluding
+MAlmasabi's malicious half entirely are in `docs/data_summary.md` §0
+(supersedes §1-9's raw-pool numbers as the actual dataset going forward).
+
+**Not yet done, correctly blocked by the plan's own sequencing, not
+skipped:** Track 0B (self-authored examples — user-led;
+`scripts/example_lab_gemini.py` exists, output not yet produced) and the
+actual train/val/test split of `curated_pool.jsonl` (small follow-up,
+deferred until the self-authored slice merges in first, per established
+sequencing). No real training run and no Phase 1 completion until both
+land — this is an explicit standing instruction, not an open question.
+
+`data/raw/{notinject,prodnull,malmasabi,bipia}/` hold each source's
+untouched pull (gitignored, regenerate via each source module's
+`pull_raw()`). `data/processed/*` is also gitignored (only `.gitkeep`
+tracked) — `curated_pool.jsonl` is a regenerable artifact, not committed.
+`third_party/BIPIA` is a gitignored clone — only its `bipia.data.utils`
+insertion primitives are reused, not its builder classes or dependency
+list (see `bipia.py`'s docstring, `docs/CITATIONS.md` C7).
 
 ## Commands
 
@@ -47,14 +78,11 @@ size, parked) resolved in `docs/DECISIONS.md` before any Phase 1 branch opens.
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# MPS backend sanity check (Mac) — forward+backward pass, NaN/Inf grad check
-python mps_smoke_test.py
+# Tests (pytest; all deterministic code per DEVELOPMENT_RULES.md's TDD scope)
+python3 -m pytest tests/ -q
 ```
 
-No test suite, lint config, or build step exists yet — `docs/specs/DEVELOPMENT_RULES.md`
-requires deterministic code (schema, pipeline transforms, aggregation/pooling
-module, eval metrics, red-team mutation logic) to be written test-first, but
-no test framework has been added to this repo yet.
+No lint config or build step exists yet.
 
 Two execution environments, used deliberately:
 - **Local (Mac, MPS backend)** — all classifier training/eval. DeBERTa-v3-small
@@ -66,8 +94,8 @@ Two execution environments, used deliberately:
 
 ```
 data/
-  raw/            untouched pulls from public sources (InjecAgent, AgentDojo,
-                   LLMail-Inject, NotInject, BIPIA — see docs/DATA_SOURCES.md)
+  raw/            untouched pulls from public sources (see docs/DATA_SOURCES.md
+                   for the verified pool: prodnull, NotInject, MAlmasabi, BIPIA)
   processed/      cleaned, labeled, schema-conformant, split train/val/test
   redteam/        adversarial examples — seeds, harvested bypasses, mutation-loop outputs
 src/
@@ -91,12 +119,16 @@ avoid future restructuring, per D8:
   single string, default window size 1. Supports future multi-turn context
   aggregation (D8a) without touching the schema or data pipeline.
 
-`InjectionTechnique` is the category enum every red-team/eval result gets
-segmented by (D10) — results are reported per-category, never as one
-aggregate ASR/bypass-rate number.
-
-`validate(ex)` enforces the label/technique invariant: benign examples carry
-no technique, malicious examples must.
+**D21 — `Label` is deliberately overloaded, read the docstring before
+touching D9:** `MALICIOUS` means "content contains a hijack instruction"
+for `TOOL_OUTPUT` examples, but "action is dangerous to execute" for
+`TOOL_CALL` examples — two different classification tasks sharing a schema
+for engineering convenience. If D9 is ever built, train it as a separate
+model/head; never pool the two into one decision boundary.
+`InjectionTechnique` (the D10 segmentation enum) applies only to malicious
+`TOOL_OUTPUT` examples — `validate()` enforces both this and the
+label/technique invariant (benign carries no technique; malicious
+`TOOL_OUTPUT` must have one; malicious `TOOL_CALL` must not).
 
 ### Model/architecture decisions already made (don't relitigate without reading D-numbers)
 
