@@ -18,18 +18,30 @@ from src.data.schema import ContentSourceType, Example, Label
 from src.model.train import ModelConfig, encode_batch
 
 
-def predict_scores(model, tokenizer, examples: List[Example], config: ModelConfig) -> List[float]:
+def predict_scores(model, tokenizer, examples: List[Example], config: ModelConfig, batch_size: int = 32) -> List[float]:
     """P(malicious) per example, via softmax over the two-class logits.
     LABEL_TO_ID (src/model/train.py) fixes MALICIOUS at index 1, so index 1
     of the softmax output is exactly the score this repo's eval metrics
-    (src/eval/metrics.py, positive label = 1 = MALICIOUS) expect."""
+    (src/eval/metrics.py, positive label = 1 = MALICIOUS) expect.
+
+    Chunks internally by batch_size rather than encoding every example in
+    one shot (ds-review LOW finding, confirmed real: the full 1,293-row val
+    split in one batch produced an actual MPS OOM during the first real eval
+    run). Every caller -- scripts/evaluate.py, scripts/run_redteam.py via
+    predict_label_fn -- gets the fix through this one shared choke point,
+    same pattern as the device-placement and truncation-side fixes before it."""
     model.eval()
-    batch = encode_batch(examples, tokenizer, config)
-    labels = batch.pop("labels")  # forward pass here is inference-only, not training
-    with torch.no_grad():
-        logits = model(**batch).logits
-    probs = torch.softmax(logits, dim=-1)
-    return probs[:, 1].tolist()
+    scores: List[float] = []
+    for i in range(0, len(examples), batch_size):
+        chunk = examples[i : i + batch_size]
+        batch = encode_batch(chunk, tokenizer, config)
+        batch.pop("labels")  # forward pass here is inference-only, not training
+        batch = {k: v.to(model.device) for k, v in batch.items()}
+        with torch.no_grad():
+            logits = model(**batch).logits
+        probs = torch.softmax(logits, dim=-1)
+        scores.extend(probs[:, 1].tolist())
+    return scores
 
 
 def predict_label_fn(model, tokenizer, config: ModelConfig, threshold: float = 0.5):

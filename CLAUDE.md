@@ -127,10 +127,27 @@ python3 -m pytest tests/ -q
 No lint config or build step exists yet.
 
 Two execution environments, used deliberately:
-- **Local (Mac, MPS backend)** — all classifier training/eval. DeBERTa-v3-small
-  trains in minutes on MPS.
-- **Colab (free tier)** — reserved for calling a stronger free-tier model
-  (OpenRouter) for synthetic data generation and the LM-judge baseline.
+- **Local (Mac, MPS backend)** — classifier training/eval. Correction, not
+  the original claim: DeBERTa-v3-small does **not** train "in minutes" on
+  MPS at real data scale (~10K rows) — the original claim was based on
+  D7's single-batch forward/backward smoke test, never a full-epoch
+  measurement. A real ~10,430-row/3-epoch run measured ~2 hours (with a
+  since-fixed silent fp16 load bug, `docs/ISSUES.md` ISSUE-3) and ~8 hours
+  after the fp32 correctness fix (`dtype=torch.float32` pinned in
+  `build_model_and_tokenizer`, `src/model/train.py`) made per-step compute
+  slower but numerically correct. `AdamW`'s default `eps=1e-8` also
+  underflows on MPS (ISSUE-1) — mitigated via `TrainingRunConfig.adam_eps
+  = 1e-6`, confirmed NaN-safe only at `lr=2e-5`, not universally.
+- **Colab (free tier)** — originally reserved for calling a stronger
+  free-tier model (OpenRouter/Gemini) for synthetic data generation and
+  the LM-judge baseline. **D29 amendment (temporary, active):** also
+  authorized for the primary classifier's full training run, run in
+  parallel with the local MPS run under deadline pressure — CUDA doesn't
+  need the MPS-specific `eps` workaround and should run the fp32-pinned
+  pipeline meaningfully faster. Whichever environment produces a clean
+  full-run checkpoint first is used; the other is a fallback. See D29 for
+  full reasoning — this doesn't change Colab's original OpenRouter/judge
+  role.
 
 ## Architecture
 

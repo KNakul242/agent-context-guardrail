@@ -71,7 +71,18 @@ def proportional_stratified_sample(rows: List[dict], key_fn: Callable[[dict], ob
     proportionally to their share of the input -- so a fallback/backfill
     slice doesn't accidentally skew toward whichever group got shuffled to
     the front. The last group absorbs any rounding remainder so the total
-    lands on exactly n rather than one-off from rounding every group down."""
+    lands on exactly n rather than one-off from rounding every group down.
+
+    Guardrails (ds-review MEDIUM finding): n must be non-negative, and the
+    pool must actually contain at least n rows -- both fail loudly rather
+    than silently returning a corrupted or short result. The caller
+    (scripts/build_curated_pool.py) treats this function's output as
+    authoritative for an exact 50/50 composition target; a silent shortfall
+    or a negative-take corruption would only surface later as a subtly
+    wrong split, not here where it's cheap to catch."""
+    assert n >= 0, f"proportional_stratified_sample: n must be non-negative, got {n}"
+    assert n <= len(rows), f"proportional_stratified_sample: requested n={n} exceeds pool size {len(rows)}"
+
     groups = defaultdict(list)
     for r in rows:
         groups[key_fn(r)].append(r)
@@ -89,4 +100,6 @@ def proportional_stratified_sample(rows: List[dict], key_fn: Callable[[dict], ob
         rng.shuffle(shuffled)
         result.extend(shuffled[:take])
         remaining_n -= take
+
+    assert len(result) == n, f"proportional_stratified_sample: produced {len(result)} rows, requested exactly {n}"
     return result

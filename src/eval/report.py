@@ -26,6 +26,7 @@ def build_eval_report(
     y_pred = [1 if s >= threshold else 0 for s in y_scores]
     hard_true = [t for t, h in zip(y_true, is_hard_negative) if h]
     hard_pred = [p for p, h in zip(y_pred, is_hard_negative) if h]
+    hard_negative_false_positives = sum(1 for t, p in zip(hard_true, hard_pred) if t == 0 and p == 1)
 
     return {
         "n_examples": len(y_true),
@@ -34,5 +35,13 @@ def build_eval_report(
         "f1": f1(y_true, y_pred),
         "roc_auc": roc_auc(y_true, y_scores),
         "recall_at_1pct_fpr": recall_at_fpr(y_true, y_scores, max_fpr=0.01),
+        # ds-review LOW-MEDIUM finding: NotInject's per-split hard-negative
+        # count is small (~30-35 rows in val/test) -- a bare percentage
+        # invites reporting "3% FPR" without the tiny denominator that makes
+        # a single false positive worth ~3 points. Numerator/denominator
+        # travel with the rate specifically so a caller can't drop that
+        # context downstream.
         "hard_negative_fpr": false_positive_rate(hard_true, hard_pred),
+        "hard_negative_fpr_numerator": hard_negative_false_positives,
+        "hard_negative_fpr_denominator": len(hard_true),
     }

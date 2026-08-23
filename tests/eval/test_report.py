@@ -15,7 +15,8 @@ def test_report_contains_every_dod_required_metric():
     specifically -- all four, not a subset of them."""
     report = build_eval_report(Y_TRUE, Y_SCORES, IS_HARD_NEGATIVE, threshold=0.35)
     assert set(report.keys()) >= {
-        "f1", "roc_auc", "recall_at_1pct_fpr", "hard_negative_fpr", "n_examples", "n_hard_negative"
+        "f1", "roc_auc", "recall_at_1pct_fpr", "hard_negative_fpr", "n_examples", "n_hard_negative",
+        "hard_negative_fpr_numerator", "hard_negative_fpr_denominator",
     }
 
 
@@ -33,6 +34,18 @@ def test_report_hard_negative_fpr_uses_only_the_hard_negative_subset():
     hard-negative subset, this would not match."""
     report = build_eval_report(Y_TRUE, Y_SCORES, IS_HARD_NEGATIVE, threshold=0.35)
     assert report["hard_negative_fpr"] == pytest.approx(0.25)
+
+
+def test_report_hard_negative_fpr_numerator_and_denominator_match_the_rate():
+    """ds-review LOW-MEDIUM finding: the bare percentage invites reporting
+    e.g. "3% FPR" without the small-sample caveat -- numerator/denominator
+    must travel alongside it so a caller can't drop that context."""
+    report = build_eval_report(Y_TRUE, Y_SCORES, IS_HARD_NEGATIVE, threshold=0.35)
+    assert report["hard_negative_fpr_denominator"] == 4
+    assert report["hard_negative_fpr_numerator"] == 1
+    assert report["hard_negative_fpr_numerator"] / report["hard_negative_fpr_denominator"] == pytest.approx(
+        report["hard_negative_fpr"]
+    )
 
 
 def test_report_recall_at_1pct_fpr_matches_the_metrics_module_directly():
