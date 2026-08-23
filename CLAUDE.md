@@ -36,40 +36,82 @@ proceeding** — do not silently build a workaround. See "Flagging drift" in
 
 ## Current state
 
-On `feature/data-foundation-public`, Phase 0 (Data Foundation,
-`docs/specs/IMPLEMENTATION_PLAN.md`). **Track 0A (agent-led) is done**:
-all four settled-pool public sources pulled/schema-mapped/validated
-(`src/data/sources/{notinject,prodnull,malmasabi,bipia}.py`), eval metrics
-(`src/eval/metrics.py`), the D8a aggregation module
+**Phase 0 / Track 0A is closed and merged to `develop`** (merge commit
+`2ba3a2f`, feature branch `feature/data-foundation-public` at `7ed4bd1`).
+Working branch is now `develop`. All four settled-pool public sources
+pulled/schema-mapped/validated (`src/data/sources/{notinject,prodnull,malmasabi,bipia}.py`),
+eval metrics (`src/eval/metrics.py`), the D8a aggregation module
 (`src/model/aggregation.py`), the red-team harness skeleton
 (`src/redteam/harness.py`), and the training script scaffold
 (`src/model/train.py`, config-driven backbone) all exist with passing
-tests (`tests/`, 77 tests, `pytest`).
+tests (`tests/`, 88 tests, `pytest`).
 
 **D13 is resolved: primary backbone is DeBERTa-v3-small (142M)** (see
 `docs/DECISIONS.md` D13). Composition pass complete — the raw 117,460-row
 bulk pool was curated down to `data/processed/curated_pool.jsonl` (13,032
 rows, exactly 6,516 malicious / 6,516 benign), via `src/data/curate.py`'s
-stratified-sampling/coherence-filter functions. Full derivation, per-domain
+stratified-sampling/coherence-filter functions, reproducibly regenerable
+via `scripts/build_curated_pool.py`. Full derivation, per-domain
 breakdowns, and the license-provenance finding that drove excluding
 MAlmasabi's malicious half entirely are in `docs/data_summary.md` §0
 (supersedes §1-9's raw-pool numbers as the actual dataset going forward).
 
-**Not yet done, correctly blocked by the plan's own sequencing, not
-skipped:** Track 0B (self-authored examples — user-led;
-`scripts/example_lab_gemini.py` exists, output not yet produced) and the
-actual train/val/test split of `curated_pool.jsonl` (small follow-up,
-deferred until the self-authored slice merges in first, per established
-sequencing). No real training run and no Phase 1 completion until both
-land — this is an explicit standing instruction, not an open question.
+**The real train/val/test split is materialized**:
+`data/processed/{train,val,test}.jsonl` (10,430 / 1,293 / 1,309 rows),
+via `scripts/split_curated_pool.py`, using D25's document-group-aware
+stratified split (BIPIA rows grouped by `(task, clean_context_id)` so a
+matched benign/malicious pair can't span two splits) — verified 0 leaks
+across 901 BIPIA document groups.
+
+**Not yet done, explicitly non-blocking for Phase 0's closed DoD, per
+D24:** Track 0B (self-authored examples — user-led;
+`scripts/example_lab_gemini.py` exists, output not yet produced). It
+merges into the curated pool opportunistically, whenever produced. No
+real training run and no Phase 1 completion until it lands — that
+constraint is still live (D24: a training run needs *some*, not zero,
+self-authored content merged in) — but it does not gate this already-closed
+branch.
+
+**Phase 1 (`feature/primary-detector-redteam`, branched from `develop`) is
+in progress.** Built so far, all with passing tests (`tests/`, 108 tests):
+- `src/data/io.py` — shared JSONL read/write for `Example` (factored out of
+  the two Phase 0 build scripts, which each hand-rolled it).
+- `data/redteam/seeds.jsonl` (27 hand-authored seeds, 3 per
+  `InjectionTechnique` except `OTHER`) + `src/redteam/seeds.py::load_seeds()`
+  — D10's manual-seed layer. `PAYLOAD_SPLIT` seeds split the payload across
+  fields of one document, not across turns — see D26 for why that's
+  in-scope despite D8a's window=1 limitation.
+- `src/model/inference.py` — `predict_scores()` (batched P(malicious)) and
+  `predict_label_fn()` (the `str -> Label` closure `src/redteam/harness.py`'s
+  `PredictFn` needs).
+- `src/eval/report.py::build_eval_report()` — assembles the Phase 1 DoD's
+  four in-distribution metrics (F1, ROC-AUC, recall@1%-FPR, hard-negative
+  FPR) from plain score/label lists.
+- Three real entrypoints, each smoke-tested end-to-end against a tiny stub
+  checkpoint (not a real model — wiring proof only): `scripts/train_primary.py`,
+  `scripts/evaluate.py`, `scripts/run_redteam.py`.
+
+**`scripts/train_primary.py` currently refuses to run** — verified by
+actually running it, not just by inspection — because
+`data/processed/self_authored.jsonl` doesn't exist yet.
+`assert_self_authored_gate()` in `src/model/train.py` enforces D24's hard
+gate as code, not just as a rule to remember: zero self-authored examples
+merged in is a hard stop, regardless of instruction to "move ahead." This
+is intentional and does not change until Track 0B produces at least one
+example. Once it does, Phase 1's actual training run, eval report, and
+red-team run (against a real checkpoint, not the stub used for wiring
+smoke tests above) are the next steps, per
+`docs/specs/IMPLEMENTATION_PLAN.md` Phase 1's DoD — none of that is done
+yet, only the wiring to do it is.
 
 `data/raw/{notinject,prodnull,malmasabi,bipia}/` hold each source's
 untouched pull (gitignored, regenerate via each source module's
 `pull_raw()`). `data/processed/*` is also gitignored (only `.gitkeep`
-tracked) — `curated_pool.jsonl` is a regenerable artifact, not committed.
-`third_party/BIPIA` is a gitignored clone — only its `bipia.data.utils`
-insertion primitives are reused, not its builder classes or dependency
-list (see `bipia.py`'s docstring, `docs/CITATIONS.md` C7).
+tracked) — `curated_pool.jsonl` and the split files are regenerable
+artifacts, not committed. `third_party/BIPIA` is a gitignored clone —
+only its `bipia.data.utils` insertion primitives are reused, not its
+builder classes or dependency list (see `bipia.py`'s docstring,
+`docs/CITATIONS.md` C7).
 
 ## Commands
 

@@ -1,13 +1,13 @@
 """
-Training script scaffold (Phase 1, docs/specs/IMPLEMENTATION_PLAN.md) --
-wiring only. Deliberately does NOT run against the real pulled dataset and
-has no __main__ entrypoint that executes a training loop: per the explicit
-instruction this was built under, no real training pass happens until (a)
-D13 (primary model size) is signed off and logged, and (b)
-data/processed/self_authored.jsonl is merged in. tests/model/test_train.py
+Training loop (Phase 1, docs/specs/IMPLEMENTATION_PLAN.md). D13 (primary
+model size) is resolved -- deberta-v3-small, ModelConfig's default. This
+module has no __main__ of its own; scripts/train_primary.py is the real
+entrypoint, and it enforces D24's hard gate (assert_self_authored_gate,
+below) before calling run_training with real data. tests/model/test_train.py
 exercises this against a handful of stub Examples and a tiny random HF model
 (hf-internal-testing/tiny-random-DebertaV2Model) -- proof the plumbing works,
-not a claim about model quality.
+not a claim about model quality; that claim only gets made once a real run
+against real data (gated on D24) actually happens.
 
 backbone is a plain string field on ModelConfig specifically so that D13
 (small/142M vs base/184M) and D7's ModernBERT fallback are both config edits,
@@ -22,6 +22,19 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from src.data.schema import Example, Label
+
+
+def assert_self_authored_gate(self_authored_examples: List[Example]) -> None:
+    """D24's hard gate, enforced as code rather than left as a convention to
+    remember: a real training run may not begin with zero self-authored
+    examples merged in, regardless of time remaining or how much of the
+    curated public-source pool is ready. Called by scripts/train_primary.py
+    before building the training set -- see docs/DECISIONS.md D24."""
+    assert self_authored_examples, (
+        "D24 hard gate: data/processed/self_authored.jsonl is missing or empty. "
+        "A real training run may not begin with zero self-authored examples merged "
+        "in -- see docs/DECISIONS.md D24. This does not flex regardless of time remaining."
+    )
 
 LABEL_TO_ID = {Label.BENIGN: 0, Label.MALICIOUS: 1}
 
@@ -113,13 +126,13 @@ def iterate_batches(examples: List[Example], batch_size: int, seed: int) -> Iter
 
 
 def run_training(model, tokenizer, examples: List[Example], model_config: ModelConfig, run_config: TrainingRunConfig) -> TrainingRunResult:
-    """Real training loop -- not called against the actual curated dataset
-    anywhere in this repo yet (see module docstring: that's gated on
-    self-authored content being merged in, per docs/DECISIONS.md D24).
-    tests/model/test_train.py exercises this against 6 stub examples and a
-    tiny random HF model to prove the loop (batching, forward, backward,
-    optimizer step, per-epoch loss tracking) is wired correctly -- not to
-    make any claim about a real model's quality."""
+    """Real training loop. scripts/train_primary.py is the only caller that
+    passes real data -- gated by assert_self_authored_gate() (D24) before it
+    ever reaches this function. tests/model/test_train.py exercises this
+    against 6 stub examples and a tiny random HF model to prove the loop
+    (batching, forward, backward, optimizer step, per-epoch loss tracking)
+    is wired correctly -- not to make any claim about a real model's
+    quality."""
     optimizer = torch.optim.AdamW(model.parameters(), lr=run_config.learning_rate)
     result = TrainingRunResult()
 

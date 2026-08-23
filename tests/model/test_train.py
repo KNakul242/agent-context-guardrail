@@ -5,6 +5,7 @@ from src.data.schema import ContentSourceType, Example, Label
 from src.model.train import (
     ModelConfig,
     TrainingRunConfig,
+    assert_self_authored_gate,
     build_model_and_tokenizer,
     encode_batch,
     iterate_batches,
@@ -116,3 +117,16 @@ def test_run_training_reduces_loss_on_a_trivial_repeated_pattern():
     assert len(result.loss_history) == run_config.epochs
     assert all(torch.isfinite(torch.tensor(l)) for l in result.loss_history)
     assert result.loss_history[-1] < result.loss_history[0]
+
+
+def test_assert_self_authored_gate_raises_on_empty_list():
+    """D24's hard gate, enforced as code: a real training run may not begin
+    with zero self-authored examples merged in, regardless of how much of
+    the curated public-source pool is ready. Mirrors the constructor-check
+    pattern TrainingRunConfig already uses for success_criterion."""
+    with pytest.raises(AssertionError):
+        assert_self_authored_gate([])
+
+
+def test_assert_self_authored_gate_passes_with_at_least_one_example():
+    assert_self_authored_gate([STUB_EXAMPLES[0]])  # should not raise

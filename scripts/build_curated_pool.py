@@ -25,7 +25,6 @@ this script.
 """
 
 import argparse
-import dataclasses
 import json
 from collections import Counter
 from pathlib import Path
@@ -36,6 +35,7 @@ from src.data.curate import (
     proportional_stratified_sample,
     stratified_cap,
 )
+from src.data.io import write_examples_jsonl
 from src.data.schema import ContentSourceType, Label, validate
 from src.data.sources import malmasabi, notinject, prodnull
 from src.data.sources.bipia import (
@@ -149,14 +149,7 @@ def main():
     for k in sorted(by_source_label_technique):
         print(" ", k, by_source_label_technique[k])
 
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUT_PATH, "w") as f:
-        for ex in curated:
-            d = dataclasses.asdict(ex)
-            d["content_source_type"] = ex.content_source_type.value
-            d["label"] = ex.label.value
-            d["technique"] = ex.technique.value if ex.technique else None
-            f.write(json.dumps(d) + "\n")
+    write_examples_jsonl(OUT_PATH, curated)
 
     print(f"\nwritten to {OUT_PATH}")
 
