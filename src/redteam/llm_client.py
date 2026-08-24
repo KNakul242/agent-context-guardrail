@@ -16,6 +16,7 @@ stub -- this module is the one real implementation of that dependency.
 """
 
 import os
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -25,7 +26,21 @@ from openai import OpenAI
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SECRETS_FILE = PROJECT_ROOT / "secrets.env"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-DEFAULT_MODEL = "gemini-3.7-flash"
+# ISSUE-10 (docs/ISSUES.md): gemini-3.7-flash's free-tier daily quota is
+# only 20 requests/day -- confirmed by directly hitting
+# RateLimitError/RESOURCE_EXHAUSTED (quotaId
+# GenerateRequestsPerDayPerProjectPerModel-FreeTier, quotaValue '20')
+# partway through a single ~22-seed escalation run. gemini-3.5-flash-lite's
+# free tier is 1000 req/day, comfortably enough for a full run -- switched
+# per direct instruction. Its per-minute limit (15/min) is tighter than the
+# daily one, though, and nothing here throttled calls at all before this
+# change -- see MIN_SECONDS_BETWEEN_CALLS below for why that's fixed too,
+# not just the model swap.
+DEFAULT_MODEL = "gemini-3.5-flash-lite"
+# 15 req/min = one call every 4s at the theoretical limit; 5s leaves margin
+# without meaningfully slowing a ~20-30-call run (worth ~1-2 extra minutes
+# total, not worth a fancier token-bucket scheme at this scale/time budget).
+MIN_SECONDS_BETWEEN_CALLS = 5.0
 # Peer-review finding: the original max_tokens=300 silently truncated
 # needle-in-haystack mutations mid-generation -- that technique's whole
 # point is a long carrier document (data/redteam/seeds.jsonl's own
@@ -48,13 +63,20 @@ def build_gemini_llm_call(model: str = DEFAULT_MODEL, max_tokens: int = DEFAULT_
         raise SystemExit(f"GEMINI_API_KEY not found in {SECRETS_FILE}")
 
     client = OpenAI(api_key=api_key, base_url=GEMINI_BASE_URL)
+    last_call_at = [None]  # mutable cell so the closure can track state across calls
 
     def llm_call(prompt: str) -> str:
+        if last_call_at[0] is not None:
+            elapsed = time.monotonic() - last_call_at[0]
+            wait = MIN_SECONDS_BETWEEN_CALLS - elapsed
+            if wait > 0:
+                time.sleep(wait)
         response = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_tokens,
         )
+        last_call_at[0] = time.monotonic()
         return response.choices[0].message.content or ""
 
     return llm_call
