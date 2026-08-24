@@ -44,7 +44,7 @@ from src.data.schema import Label
 from src.eval.metrics import threshold_at_fpr
 from src.model.inference import predict_label_fn, predict_scores
 from src.model.train import ModelConfig, build_model_and_tokenizer
-from src.redteam.harness import harvest_bypasses, run_escalation, seeds_exceeding_max_length
+from src.redteam.harness import harvest_bypasses, marker_token_offset, run_escalation, seeds_exceeding_max_length
 from src.redteam.llm_client import build_gemini_llm_call
 from src.redteam.seeds import DEFAULT_SEEDS_PATH, load_seeds
 
@@ -97,6 +97,24 @@ def main():
             f"  affected techniques: {affected_techniques}\n"
         )
 
+    # ISSUE-9 harvest fix, applied here too (was previously only in
+    # run_redteam.py -- a real gap, caught before this file's harvest was
+    # trusted for a retrain): an out-of-window "bypass" isn't a real missed
+    # attack, the payload never reached the classifier. Every escalated
+    # mutation of an out-of-window base seed inherits the same truncation
+    # regardless of what the mutation itself says, so the whole seed_id is
+    # excluded from harvesting, not just its round-0 result.
+    count_tokens = lambda s: len(tokenizer(s)["input_ids"])
+    marker_offsets = {
+        seed.seed_id: marker_token_offset(seed.content, seed.injection_marker, count_tokens)
+        for seed in seeds
+        if seed.injection_marker is not None
+    }
+    marker_offsets = {k: v for k, v in marker_offsets.items() if v is not None}
+    out_of_window_seed_ids = {sid for sid, offset in marker_offsets.items() if offset >= config.max_length}
+    if out_of_window_seed_ids:
+        print(f"({len(out_of_window_seed_ids)} out-of-window seed(s) will be excluded from harvesting entirely, including any escalated mutations: {sorted(out_of_window_seed_ids)})\n")
+
     # Incremental persistence (peer-review finding): write harvested
     # bypasses to disk as each seed's escalation completes, not only after
     # the full corpus finishes -- a live API failure late in a long run
@@ -105,6 +123,8 @@ def main():
     harvested_so_far = []
 
     def on_seed_done(seed_id: str, trajectory) -> None:
+        if seed_id in out_of_window_seed_ids:
+            return
         harvested_so_far.extend(harvest_bypasses(trajectory))
         write_examples_jsonl(HARVEST_PATH, harvested_so_far)
 
