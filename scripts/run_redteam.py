@@ -128,12 +128,23 @@ def main():
         if seed.injection_marker is not None
     }
     marker_offsets = {k: v for k, v in marker_offsets.items() if v is not None}
+    out_of_window_seed_ids = set()
     if marker_offsets:
         split = split_bypass_by_truncation_window(results, marker_offsets, max_length=config.max_length)
         print("\ntruncation-window split (marker-tagged seeds only, ISSUE-9):")
         print(json.dumps(split, indent=2))
+        out_of_window_seed_ids = {sid for sid, offset in marker_offsets.items() if offset >= config.max_length}
 
-    harvested = harvest_bypasses(results)
+    # ISSUE-9 harvest fix (peer review, second pass): an out-of-window
+    # "bypass" isn't a real missed attack -- the payload never reached the
+    # classifier, so the row would be mislabeled MALICIOUS training data
+    # for something the model was never actually shown. Never harvest these.
+    harvestable_results = [r for r in results if r.seed.seed_id not in out_of_window_seed_ids]
+    excluded_count = len(results) - len(harvestable_results)
+    if excluded_count:
+        print(f"\n({excluded_count} out-of-window result(s) excluded from harvesting -- truncation artifacts, not genuine bypasses, per ISSUE-9)")
+
+    harvested = harvest_bypasses(harvestable_results)
     write_examples_jsonl(HARVEST_PATH, harvested)
     print(f"\nharvested {len(harvested)} / {len(seeds)} confirmed bypasses -> {HARVEST_PATH}")
 
