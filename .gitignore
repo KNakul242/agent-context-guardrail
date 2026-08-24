@@ -9,6 +9,7 @@ data/processed/*
 !data/processed/.gitkeep
 data/redteam/harvested.jsonl
 data/redteam/harvested_escalation.jsonl
+data/redteam/harvested_merged.jsonl
 models/*
 !models/.gitkeep
 third_party/

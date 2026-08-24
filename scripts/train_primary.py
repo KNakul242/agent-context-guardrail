@@ -97,6 +97,18 @@ def main():
         "--extra-jsonl", type=str, default=None,
         help="path to additional Example rows to merge in (e.g. data/redteam/harvested.jsonl for the harvest-retrain step, IMPLEMENTATION_PLAN.md Phase 1 DoD)",
     )
+    parser.add_argument(
+        "--backbone", type=str, default=None,
+        help=(
+            "override the model to load -- a HF hub id (vanilla, the default: microsoft/deberta-v3-small, "
+            "D13) or a local checkpoint directory (e.g. models/primary/epoch_3, to warm-start a harvest-"
+            "retrain pass from an already-trained checkpoint instead of cold-starting). See C12, "
+            "docs/CITATIONS.md, for when warm-starting is/isn't the right call -- it is NOT the default "
+            "here for a reason (Ash & Adams 2020: warm-starting on an incrementally-grown dataset tends "
+            "to generalize worse than training from scratch on the combined set when the increment is a "
+            "meaningful fraction of the data), only pass this deliberately."
+        ),
+    )
     args = parser.parse_args()
 
     # run_id disambiguates concurrent/repeated --limit smoke tests from each
@@ -120,7 +132,7 @@ def main():
     extra_note = f" + {len(extra)} from {args.extra_jsonl}" if args.extra_jsonl else ""
     print(f"training set: {len(curated)} curated + {len(self_authored)} self-authored{extra_note}, {len(examples)} used this run")
 
-    model_config = ModelConfig()  # D13: primary backbone = microsoft/deberta-v3-small
+    model_config = ModelConfig(backbone=args.backbone) if args.backbone else ModelConfig()  # D13: primary backbone = microsoft/deberta-v3-small, or --backbone to warm-start
     run_config = TrainingRunConfig(
         seed=args.seed,
         epochs=args.epochs,
@@ -153,6 +165,7 @@ def main():
         manifest = {
             "written_at_utc": datetime.now(timezone.utc).isoformat(),
             "device": device,
+            "backbone": model_config.backbone,
             "completed_epochs": epoch + 1,
             "total_epochs": args.epochs,
             "limit": args.limit,
