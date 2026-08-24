@@ -24,6 +24,20 @@ data/processed/val.jsonl to instead compute the actual score cutoff that
 achieves --max-fpr (default 0.01) on that split, via
 src.eval.metrics.threshold_at_fpr, and red-team at that exact operating
 point instead of an arbitrary default.
+
+ISSUE-9 (docs/ISSUES.md): predict_label_fn always right-truncates content
+before scoring -- deliberately, not a bug (see src/model/inference.py's
+docstring): a real deployed guardrail has no oracle at inference time
+telling it where a hidden payload sits, so right-truncation is arguably
+MORE representative of production reality than always preserving the
+payload would be. But for seeds whose content exceeds max_length, this
+means a "bypass" can mean either "the model saw the payload and missed
+it" (in_window, a genuine capability gap) or "the payload was truncated
+away before the model ever ran" (out_of_window, zero signal reached the
+classifier -- not fixed by retraining, only by a different scoring
+strategy). For any seed with an injection_marker registered
+(data/redteam/seeds.jsonl), this script reports both components
+separately rather than blending them into one number.
 """
 
 import argparse
@@ -41,7 +55,14 @@ from src.data.schema import Label
 from src.eval.metrics import threshold_at_fpr
 from src.model.inference import predict_label_fn, predict_scores
 from src.model.train import ModelConfig, build_model_and_tokenizer
-from src.redteam.harness import bypass_rate_by_technique, harvest_bypasses, run_seeds
+from src.redteam.harness import (
+    bypass_rate_by_technique,
+    harvest_bypasses,
+    marker_token_offset,
+    run_seeds,
+    seeds_exceeding_max_length,
+    split_bypass_by_truncation_window,
+)
 from src.redteam.seeds import DEFAULT_SEEDS_PATH, load_seeds
 
 HARVEST_PATH = "data/redteam/harvested.jsonl"
@@ -75,9 +96,42 @@ def main():
     threshold = resolve_threshold(config, model, tokenizer, args)
     predict_fn = predict_label_fn(model, tokenizer, config, threshold=threshold)
 
+    # ISSUE-9 (docs/ISSUES.md): general safety net -- flag ANY seed whose
+    # real tokenized length exceeds max_length, even one with no
+    # injection_marker registered (the split report below only covers
+    # marker-tagged seeds).
+    token_counts = {seed.seed_id: len(tokenizer(seed.content)["input_ids"]) for seed in seeds}
+    truncated_seed_ids = seeds_exceeding_max_length(token_counts, max_length=config.max_length)
+    if truncated_seed_ids:
+        affected_techniques = sorted({s.technique.value for s in seeds if s.seed_id in truncated_seed_ids})
+        print(
+            f"NOTE (ISSUE-9): {len(truncated_seed_ids)} seed(s) exceed max_length={config.max_length} "
+            f"tokens and will be right-truncated before scoring: {truncated_seed_ids}\n"
+            f"  affected techniques: {affected_techniques}\n"
+        )
+
     results = run_seeds(seeds, predict_fn)
     rates = bypass_rate_by_technique(results)
+    print("bypass rate by technique (blended -- see the in/out-of-window split below for any technique with registered injection_markers):")
     print(json.dumps(rates, indent=2))
+
+    # ISSUE-9 split report (peer-review refinement): for any seed with a
+    # known injection_marker, separate "model saw the payload and missed
+    # it" from "payload was truncated away before scoring" -- these are
+    # different findings with different fixes, and out_of_window is
+    # arguably stronger evidence for D7's context-length gate than a
+    # clean in_window miss, not weaker or discardable.
+    count_tokens = lambda s: len(tokenizer(s)["input_ids"])
+    marker_offsets = {
+        seed.seed_id: marker_token_offset(seed.content, seed.injection_marker, count_tokens)
+        for seed in seeds
+        if seed.injection_marker is not None
+    }
+    marker_offsets = {k: v for k, v in marker_offsets.items() if v is not None}
+    if marker_offsets:
+        split = split_bypass_by_truncation_window(results, marker_offsets, max_length=config.max_length)
+        print("\ntruncation-window split (marker-tagged seeds only, ISSUE-9):")
+        print(json.dumps(split, indent=2))
 
     harvested = harvest_bypasses(results)
     write_examples_jsonl(HARVEST_PATH, harvested)

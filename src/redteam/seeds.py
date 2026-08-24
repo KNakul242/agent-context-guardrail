@@ -50,6 +50,7 @@ def load_seeds(path: Union[str, Path] = DEFAULT_SEEDS_PATH) -> List[RedTeamSeed]
                     seed_id=d["seed_id"],
                     technique=InjectionTechnique(d["technique"]),
                     content=d["content"],
+                    injection_marker=d.get("injection_marker"),
                 )
             )
     return seeds

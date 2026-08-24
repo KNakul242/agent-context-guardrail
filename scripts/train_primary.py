@@ -93,6 +93,10 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None, help="cap the training set to N examples, for smoke-testing")
     parser.add_argument("--output-dir", type=str, default=None, help="override the checkpoint output directory")
+    parser.add_argument(
+        "--extra-jsonl", type=str, default=None,
+        help="path to additional Example rows to merge in (e.g. data/redteam/harvested.jsonl for the harvest-retrain step, IMPLEMENTATION_PLAN.md Phase 1 DoD)",
+    )
     args = parser.parse_args()
 
     # run_id disambiguates concurrent/repeated --limit smoke tests from each
@@ -103,16 +107,18 @@ def main():
 
     curated = load_examples_jsonl(TRAIN_PATH)
     self_authored = load_examples_jsonl(SELF_AUTHORED_PATH)
+    extra = load_examples_jsonl(args.extra_jsonl) if args.extra_jsonl else []
     assert curated, f"{TRAIN_PATH} is missing or empty -- run scripts/split_curated_pool.py first"
     assert_self_authored_gate(self_authored)
 
-    examples = curated + self_authored
+    examples = curated + self_authored + extra
     if args.limit is not None:
         shuffled = examples[:]
         random.Random(args.seed).shuffle(shuffled)
         examples = shuffled[: args.limit]
         print(f"--limit {args.limit}: smoke-test run, not a full training pass -> {checkpoint_dir}")
-    print(f"training set: {len(curated)} curated + {len(self_authored)} self-authored, {len(examples)} used this run")
+    extra_note = f" + {len(extra)} from {args.extra_jsonl}" if args.extra_jsonl else ""
+    print(f"training set: {len(curated)} curated + {len(self_authored)} self-authored{extra_note}, {len(examples)} used this run")
 
     model_config = ModelConfig()  # D13: primary backbone = microsoft/deberta-v3-small
     run_config = TrainingRunConfig(
@@ -156,6 +162,8 @@ def main():
             "seed": args.seed,
             "n_curated": len(curated),
             "n_self_authored": len(self_authored),
+            "extra_jsonl": args.extra_jsonl,
+            "n_extra": len(extra),
             "n_examples_used": len(examples),
             "loss_history": loss_history_so_far,
             "success_criterion": run_config.success_criterion,

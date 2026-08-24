@@ -44,7 +44,7 @@ from src.data.schema import Label
 from src.eval.metrics import threshold_at_fpr
 from src.model.inference import predict_label_fn, predict_scores
 from src.model.train import ModelConfig, build_model_and_tokenizer
-from src.redteam.harness import harvest_bypasses, run_escalation
+from src.redteam.harness import harvest_bypasses, run_escalation, seeds_exceeding_max_length
 from src.redteam.llm_client import build_gemini_llm_call
 from src.redteam.seeds import DEFAULT_SEEDS_PATH, load_seeds
 
@@ -80,6 +80,22 @@ def main():
     threshold = resolve_threshold(config, model, tokenizer, args)
     predict_fn = predict_label_fn(model, tokenizer, config, threshold=threshold)
     llm_call = build_gemini_llm_call()
+
+    # ISSUE-9 (docs/ISSUES.md): predict_label_fn always right-truncates --
+    # a seed whose real tokenized length exceeds max_length can have its
+    # payload silently cut off before scoring, and every round-N mutation
+    # this loop generates inherits the same risk. Flag base seeds now,
+    # loudly, so this isn't silently repeated across escalation rounds too.
+    token_counts = {seed.seed_id: len(tokenizer(seed.content)["input_ids"]) for seed in seeds}
+    truncated_seed_ids = seeds_exceeding_max_length(token_counts, max_length=config.max_length)
+    if truncated_seed_ids:
+        affected_techniques = sorted({s.technique.value for s in seeds if s.seed_id in truncated_seed_ids})
+        print(
+            f"WARNING (ISSUE-9): {len(truncated_seed_ids)} base seed(s) exceed max_length={config.max_length} "
+            f"tokens and will be right-truncated before scoring -- results for these (and any escalated "
+            f"mutations of them) are NOT reliable evidence of model behavior: {truncated_seed_ids}\n"
+            f"  affected techniques: {affected_techniques}\n"
+        )
 
     # Incremental persistence (peer-review finding): write harvested
     # bypasses to disk as each seed's escalation completes, not only after

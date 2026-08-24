@@ -4,13 +4,17 @@ import pytest
 
 from src.data.schema import ContentSourceType, InjectionTechnique, Label, validate
 from src.redteam.harness import (
+    RedTeamResult,
     RedTeamSeed,
     bypass_rate_by_technique,
     escalate,
     harvest_bypasses,
+    marker_token_offset,
     run_escalation,
     run_escalation_loop,
     run_seeds,
+    seeds_exceeding_max_length,
+    split_bypass_by_truncation_window,
 )
 
 
@@ -43,6 +47,93 @@ def test_run_seeds_records_bypass_when_detector_says_benign():
 def test_run_seeds_records_catch_when_detector_says_malicious():
     results = run_seeds(SEEDS, predict_fn=_always_predicts(Label.MALICIOUS))
     assert all(not r.bypassed for r in results)
+
+
+# --- seeds_exceeding_max_length (ISSUE-9, docs/ISSUES.md) ---
+# predict_label_fn always right-truncates red-team content (its inference-
+# only Example has no source="bipia" override, so encode_batch's left-
+# truncation fix never fires for it) -- a seed whose tokenized length
+# exceeds max_length can have its payload silently cut off before scoring,
+# producing a bypass rate that can't distinguish "model missed it" from
+# "harness never showed it the payload." Verified against real data: this
+# is exactly what happened to 2 of 3 needle_in_haystack seeds. This
+# function takes pre-computed token counts (not a tokenizer) to stay a
+# pure, easily-testable function -- callers compute counts with whatever
+# real tokenizer they already have.
+
+def test_seeds_exceeding_max_length_flags_seeds_over_the_limit():
+    token_counts = {"s1": 600, "s2": 400}
+    assert seeds_exceeding_max_length(token_counts, max_length=512) == ["s1"]
+
+
+def test_seeds_exceeding_max_length_returns_empty_when_none_exceed():
+    token_counts = {"s1": 400, "s2": 300}
+    assert seeds_exceeding_max_length(token_counts, max_length=512) == []
+
+
+def test_seeds_exceeding_max_length_boundary_is_inclusive_of_max_length():
+    """Exactly at max_length is not truncated -- only strictly over."""
+    token_counts = {"s1": 512}
+    assert seeds_exceeding_max_length(token_counts, max_length=512) == []
+
+
+# --- marker_token_offset + split_bypass_by_truncation_window ---
+# Peer-review correction to ISSUE-9's first framing (docs/ISSUES.md): a
+# blended needle_in_haystack bypass rate conflates two different failure
+# modes -- "model saw the payload and missed it" (in-window, a genuine
+# capability gap) vs "payload was truncated away before scoring" (out-of-
+# window, zero signal reached the classifier -- itself stronger evidence
+# for D7's context-length gate than a clean miss would be, since only a
+# longer-context architecture fixes it, not retraining). These need to be
+# reported separately, not blended into one number.
+
+def test_marker_token_offset_returns_the_token_count_before_the_marker():
+    count_tokens = lambda s: len(s)  # stub: 1 "token" per char, for a deterministic test
+    offset = marker_token_offset("AAAAMARKERBBBB", marker="MARKER", count_tokens=count_tokens)
+    assert offset == 4  # "AAAA" is 4 chars/tokens before the marker
+
+
+def test_marker_token_offset_returns_none_when_marker_not_found():
+    count_tokens = lambda s: len(s)
+    assert marker_token_offset("no marker here", marker="MISSING", count_tokens=count_tokens) is None
+
+
+def test_split_bypass_by_truncation_window_separates_in_and_out_of_window():
+    seed_in = RedTeamSeed(seed_id="in1", technique=InjectionTechnique.NEEDLE_IN_HAYSTACK, content="x")
+    seed_out = RedTeamSeed(seed_id="out1", technique=InjectionTechnique.NEEDLE_IN_HAYSTACK, content="x")
+    results = [
+        RedTeamResult(seed=seed_in, bypassed=False),  # in-window, caught -- genuine catch
+        RedTeamResult(seed=seed_out, bypassed=True),  # out-of-window, "bypassed" -- but payload was never visible
+    ]
+    marker_offsets = {"in1": 100, "out1": 600}  # max_length=512 below
+
+    split = split_bypass_by_truncation_window(results, marker_offsets, max_length=512)
+
+    assert split["in_window"]["n"] == 1
+    assert split["in_window"]["bypass_rate"] == pytest.approx(0.0)
+    assert split["out_of_window"]["n"] == 1
+    assert split["out_of_window"]["bypass_rate"] == pytest.approx(1.0)
+
+
+def test_split_bypass_by_truncation_window_only_includes_seeds_with_a_known_marker():
+    """A seed absent from marker_offsets (no injection_marker registered)
+    is not silently assumed in-window -- it's simply not represented in
+    this split, so the split only ever reports on what it actually knows."""
+    seed_known = RedTeamSeed(seed_id="known", technique=InjectionTechnique.NEEDLE_IN_HAYSTACK, content="x")
+    seed_unknown = RedTeamSeed(seed_id="unknown", technique=InjectionTechnique.NEEDLE_IN_HAYSTACK, content="x")
+    results = [
+        RedTeamResult(seed=seed_known, bypassed=False),
+        RedTeamResult(seed=seed_unknown, bypassed=True),
+    ]
+    split = split_bypass_by_truncation_window(results, marker_offsets={"known": 100}, max_length=512)
+    assert split["in_window"]["n"] == 1
+    assert split["out_of_window"]["n"] == 0
+
+
+def test_split_bypass_by_truncation_window_reports_none_rate_for_empty_group():
+    split = split_bypass_by_truncation_window([], marker_offsets={}, max_length=512)
+    assert split["in_window"]["bypass_rate"] is None
+    assert split["out_of_window"]["bypass_rate"] is None
 
 
 def test_bypass_rate_by_technique_segments_not_aggregates():

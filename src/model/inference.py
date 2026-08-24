@@ -48,7 +48,25 @@ def predict_label_fn(model, tokenizer, config: ModelConfig, threshold: float = 0
     """Returns a str -> Label closure matching
     src/redteam/harness.py's PredictFn -- the red-team runner script feeds
     seed content through this one string at a time, exactly as an agent
-    would see a single tool output."""
+    would see a single tool output.
+
+    Truncation note (ISSUE-9, docs/ISSUES.md): the Example built here
+    carries no source/notes override, so encode_batch's _payload_is_appended
+    check (src/model/train.py) never fires -- this always right-truncates,
+    unlike training-time BIPIA insert_end rows, which are left-truncated.
+    This is deliberate, not a bug to fix by copying that left-truncation
+    here: D28's left-truncation was only possible because label-construction
+    time has an oracle (BIPIA's own insert_end ground truth telling us
+    exactly where the payload is). A real deployed guardrail has no such
+    oracle at inference time -- it can't know in advance where in a long
+    tool output a hidden payload might sit, so right-truncation (or, more
+    accurately, whatever a real deployment's truncation policy is) may be
+    MORE representative of production reality, not less. The actual
+    consequence of this choice for long content-embedding red-team seeds
+    (needle_in_haystack) is handled via
+    src/redteam/harness.py's split_bypass_by_truncation_window() --
+    reporting in-window vs. out-of-window bypass separately, not silently
+    flipping this function's truncation behavior."""
 
     def predict_fn(content: str) -> Label:
         example = Example(

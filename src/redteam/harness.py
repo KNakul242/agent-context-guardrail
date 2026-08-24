@@ -28,6 +28,14 @@ class RedTeamSeed:
     seed_id: str
     technique: InjectionTechnique
     content: str
+    # Optional: the exact substring where the injected instruction begins,
+    # for content-embedding techniques (needle_in_haystack) where the
+    # payload's position within a long document determines whether it
+    # survives predict_label_fn's right-truncation (ISSUE-9,
+    # docs/ISSUES.md). None for techniques where the whole content IS the
+    # payload (direct_override, encoding_obfuscation, ...) -- position
+    # doesn't apply there.
+    injection_marker: Optional[str] = None
 
 
 @dataclass
@@ -46,6 +54,68 @@ def run_seeds(seeds: List[RedTeamSeed], predict_fn: PredictFn) -> List[RedTeamRe
         predicted = predict_fn(seed.content)
         results.append(RedTeamResult(seed=seed, bypassed=(predicted == Label.BENIGN)))
     return results
+
+
+def seeds_exceeding_max_length(token_counts: Dict[str, int], max_length: int) -> List[str]:
+    """ISSUE-9 (docs/ISSUES.md): predict_label_fn's inference-only Example
+    is always right-truncated (no source="bipia" override, so
+    encode_batch's left-truncation fix never fires for red-team content).
+    A seed whose real tokenized length exceeds max_length can have its
+    payload silently cut off before scoring -- verified against real data
+    that this happened to 2 of 3 needle_in_haystack seeds, producing a
+    bypass rate that couldn't distinguish "model missed it" from "harness
+    never showed it the payload." Callers (scripts/run_redteam.py,
+    scripts/escalate_redteam.py) compute token_counts with the real
+    tokenizer and surface this list so a red-team run's own output makes
+    truncation risk visible per-seed, rather than silently repeating
+    ISSUE-9. Pure function over pre-computed counts, not a tokenizer, to
+    stay trivially testable."""
+    return [seed_id for seed_id, count in token_counts.items() if count > max_length]
+
+
+def marker_token_offset(content: str, marker: str, count_tokens: Callable[[str], int]) -> Optional[int]:
+    """Token offset of `marker`'s first occurrence in `content` -- i.e. how
+    many tokens precede it, which is exactly what determines whether it
+    survives HF's default right-truncation to max_length (kept iff
+    offset < max_length). count_tokens is injected (not a raw tokenizer)
+    to keep this a pure, stub-testable function -- callers pass e.g.
+    `lambda s: len(tokenizer(s)["input_ids"])`. Returns None if the marker
+    isn't found in content at all."""
+    idx = content.find(marker)
+    if idx == -1:
+        return None
+    return count_tokens(content[:idx])
+
+
+def split_bypass_by_truncation_window(results: List[RedTeamResult], marker_offsets: Dict[str, int], max_length: int) -> dict:
+    """ISSUE-9 (docs/ISSUES.md), refined per peer review: a blended
+    bypass rate for a content-embedding technique (needle_in_haystack)
+    conflates two different failure modes that need different fixes --
+    "in_window" (the payload's marker survives right-truncation; the model
+    saw it and still missed it -- a genuine semantic/capability gap, fixed
+    by better training) vs "out_of_window" (the marker was truncated away
+    before the model ever ran; zero signal reached the classifier, so a
+    perfect classifier and a random one score identically on that input --
+    not fixed by retraining, only by a longer-context architecture, which
+    makes this arguably STRONGER evidence for D7's ModernBERT gate than a
+    clean in-window miss, not weaker).
+
+    Only includes results whose seed_id appears in marker_offsets -- a
+    seed with no registered injection_marker isn't silently assumed
+    in-window, it's simply absent from this split (see the blended
+    per-technique report, bypass_rate_by_technique, for those)."""
+    in_window = [r for r in results if r.seed.seed_id in marker_offsets and marker_offsets[r.seed.seed_id] < max_length]
+    out_of_window = [r for r in results if r.seed.seed_id in marker_offsets and marker_offsets[r.seed.seed_id] >= max_length]
+
+    def _rate(group: List[RedTeamResult]) -> Optional[float]:
+        if not group:
+            return None
+        return sum(1 for r in group if r.bypassed) / len(group)
+
+    return {
+        "in_window": {"n": len(in_window), "bypass_rate": _rate(in_window)},
+        "out_of_window": {"n": len(out_of_window), "bypass_rate": _rate(out_of_window)},
+    }
 
 
 def bypass_rate_by_technique(results: List[RedTeamResult]) -> dict:
