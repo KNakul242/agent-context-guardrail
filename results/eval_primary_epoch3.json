@@ -1,0 +1,13 @@
+{
+  "n_examples": 1293,
+  "n_hard_negative": 34,
+  "threshold": 0.5,
+  "f1": 0.9684044233807267,
+  "roc_auc": 0.9949130480556645,
+  "recall_at_1pct_fpr": 0.9500780031201248,
+  "hard_negative_fpr": 0.08823529411764706,
+  "hard_negative_fpr_numerator": 3,
+  "hard_negative_fpr_denominator": 34,
+  "checkpoint": "models/primary/epoch_3",
+  "split": "data/processed/val.jsonl"
+}

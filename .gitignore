@@ -33,4 +33,5 @@ htmlcov/
 *.swp
 
 docs/*
+!docs/CITATIONS.md
 .claude/*

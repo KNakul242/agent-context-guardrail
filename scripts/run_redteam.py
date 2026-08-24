@@ -86,6 +86,7 @@ def main():
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--derive-threshold-from-val", type=str, default=None, help="path to a val split; overrides --threshold")
     parser.add_argument("--max-fpr", type=float, default=0.01)
+    parser.add_argument("--output", type=str, default=None, help="also write a JSON summary (threshold, per-technique rates, truncation split, harvest count) to this path")
     args = parser.parse_args()
 
     seeds = load_seeds()
@@ -147,6 +148,21 @@ def main():
     harvested = harvest_bypasses(harvestable_results)
     write_examples_jsonl(HARVEST_PATH, harvested)
     print(f"\nharvested {len(harvested)} / {len(seeds)} confirmed bypasses -> {HARVEST_PATH}")
+
+    if args.output:
+        summary = {
+            "checkpoint": args.checkpoint,
+            "threshold": threshold,
+            "n_seeds": len(seeds),
+            "bypass_rate_by_technique": rates,
+            "truncation_window_split": split if marker_offsets else None,
+            "n_harvested": len(harvested),
+            "harvest_path": HARVEST_PATH,
+        }
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(summary, f, indent=2)
+        print(f"summary written to {args.output}")
 
 
 if __name__ == "__main__":

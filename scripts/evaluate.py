@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--checkpoint", required=True, help="path to a saved model+tokenizer directory")
     parser.add_argument("--split", default="data/processed/val.jsonl")
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--output", type=str, default=None, help="also write the report JSON to this path")
     args = parser.parse_args()
 
     examples = load_examples_jsonl(args.split)
@@ -53,6 +54,12 @@ def main():
     report["split"] = args.split
 
     print(json.dumps(report, indent=2))
+
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        with open(args.output, "w") as f:
+            json.dump(report, f, indent=2)
+        print(f"\nwritten to {args.output}")
 
 
 if __name__ == "__main__":
