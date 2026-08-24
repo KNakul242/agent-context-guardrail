@@ -1,3 +1,5 @@
+import pytest
+
 from src.data.curate import (
     classify_domain,
     entity_names,
@@ -83,3 +85,24 @@ def test_proportional_sample_preserves_rough_proportions():
     assert 60 <= counts["table"] <= 80  # ~70
     assert 10 <= counts["email"] <= 30  # ~20
     assert 0 <= counts["code"] <= 20  # ~10
+
+
+def test_proportional_sample_rejects_negative_n():
+    """ds-review MEDIUM finding: round(n * len(group) / total) going negative
+    previously made shuffled[:take] silently drop items from the end of the
+    group instead of raising -- a corrupted result with no signal anything
+    went wrong. n < 0 is never a valid request; fail loud."""
+    rows = [{"d": "table"}] * 10
+    with pytest.raises(AssertionError):
+        proportional_stratified_sample(rows, key_fn=lambda r: r["d"], n=-1, seed=0)
+
+
+def test_proportional_sample_raises_if_the_pool_is_smaller_than_n():
+    """The last group previously used take = remaining_n with no min()
+    against len(group) -- if the pool can't actually supply n rows, the
+    function silently returned fewer than n with no error. A caller
+    (scripts/build_curated_pool.py) treating this as authoritative for an
+    exact 50/50 target needs a loud failure here, not a silent shortfall."""
+    rows = [{"d": "table"}] * 5 + [{"d": "email"}] * 3
+    with pytest.raises(AssertionError):
+        proportional_stratified_sample(rows, key_fn=lambda r: r["d"], n=100, seed=0)

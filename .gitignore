@@ -7,9 +7,13 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
-models/*.bin
-models/*.safetensors
-models/checkpoint-*/
+!data/processed/curated_pool.jsonl
+!data/processed/train.jsonl
+!data/processed/val.jsonl
+!data/processed/test.jsonl
+!data/processed/self_authored.jsonl
+models/*
+!models/.gitkeep
 third_party/
 wandb/
 .ipynb_checkpoints/
@@ -29,4 +33,5 @@ htmlcov/
 *.swp
 
 docs/*
+!docs/CITATIONS.md
 .claude/*
