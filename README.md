@@ -4,21 +4,22 @@ RepelloAI Research Engineer Assignment — Track 1 (Agentic Tool-Call Guardrail)
 
 Scope: detecting **indirect prompt injection (IPI)** in tool outputs consumed by
 LLM agents (files, webpages, API responses) that an agent reads mid-task.
-Malicious/dangerous tool-call detection is a stretch extension — see `docs/DECISIONS.md`.
+Malicious/dangerous tool-call detection is an in-scope stretch extension, not
+built in this submission.
 
 ## Why this scope, this architecture, this everything
 
 Every non-obvious choice in this repo — attack surface, backbone, why we didn't
 fine-tune from PromptGuard's checkpoint, why encoder over decoder-classifier over
 LM-judge, the ModernBERT fallback trigger condition, the multi-turn aggregation
-design — is logged with reasoning in **`docs/DECISIONS.md`**. That file is the
-primary artifact for understanding *how* we got here; this README is just setup.
+design — is explained with reasoning in the accompanying `REPORT.md` write-up.
+This README is setup + results, not the full reasoning.
 
 ## Repo structure
 
 ```
 data/
-  raw/            # untouched pulls from public sources (prodnull, NotInject, MAlmasabi, BIPIA — see docs/DATA_SOURCES.md)
+  raw/            # untouched pulls from public sources (prodnull, NotInject, MAlmasabi, BIPIA — see LICENSE-THIRD-PARTY.md)
   processed/      # cleaned, labeled, split train/val/test — our unified schema
   redteam/        # adversarial examples we construct/harvest to break our own detector
 src/
@@ -29,8 +30,7 @@ src/
 notebooks/        # exploratory work only — nothing load-bearing lives only in a notebook
 models/           # trained checkpoints / adapters (also mirrored to HF Hub, see below)
 docs/
-  DECISIONS.md    # running design-decision log with rationale (see above)
-  DATA_SOURCES.md # per-source license + attribution tracking
+  CITATIONS.md    # paper/repo/technique provenance
 ```
 
 ## Setup
@@ -42,10 +42,10 @@ pip install -r requirements.txt
 
 `requirements.txt` is exact-pinned, not floor-pinned (`torch==2.13.0`
 etc.) — a floor-only install (`torch>=2.2`) was the actual root cause of
-a real training-collapse bug this project hit (`docs/ISSUES.md` ISSUE-3);
-don't loosen the pins without reading that entry first. If you're on
-Colab, do **not** add a `torchvision` pin either — see the comment above
-that line in `requirements.txt` (ISSUE-7).
+a real training-collapse bug this project hit during development; don't
+loosen the pins casually. If you're on Colab, do **not** add a
+`torchvision` pin either — see the comment above that line in
+`requirements.txt`.
 
 For the red-team escalation loop and the manual example-authoring tools
 (`scripts/escalate_redteam.py`, `scripts/example_lab_gemini.py`,
@@ -56,21 +56,20 @@ Two execution environments, used for different steps:
 - **Local (Mac, MPS backend)** — classifier training/eval. Correction to
   an earlier claim here: DeBERTa-v3-small does **not** train in minutes at
   real data scale (~10K rows) — a full 3-epoch run measured ~2-8 hours
-  depending on dtype correctness (`docs/ISSUES.md` ISSUE-1/ISSUE-3).
+  depending on dtype correctness.
 - **Colab (free tier, T4)** — used for the LLM-red-teamer escalation
   calls (Gemini, not OpenRouter — see `src/redteam/llm_client.py`), and,
   under deadline pressure, also authorized as a parallel/redundant
-  environment for the primary training run itself
-  (`docs/DECISIONS.md` D29) via `notebooks/colab_train_primary.ipynb`.
+  environment for the primary training run itself via
+  `notebooks/colab_train_primary.ipynb`.
 
 ## Dataset
 
 `data/processed/curated_pool.jsonl` — **13,032 rows, exactly 6,516
 malicious / 6,516 benign** — composed from four public sources plus a
-growing self-authored slice. Full derivation (sampling/filtering
-parameters, per-domain breakdowns, the license-provenance finding that
-drove excluding one source's malicious half entirely) is in
-`docs/data_summary.md`; this is the summary.
+growing self-authored slice (sampling/filtering parameters, per-domain
+breakdowns, and the license-provenance finding that drove excluding one
+source's malicious half entirely are covered in `REPORT.md`).
 
 | Source | Rows | Malicious | Benign | License |
 |---|---|---|---|---|
@@ -82,17 +81,16 @@ drove excluding one source's malicious half entirely) is in
 | Self-authored (`self_authored.jsonl`, Track 0B, hand-authored/adapted, growing) | 3 | 1 | 2 | this repo's `LICENSE` |
 
 **Split**: `data/processed/{train,val,test}.jsonl` — 10,430 / 1,293 / 1,309
-rows, document-group-aware stratified split (`docs/DECISIONS.md` D25) so a
-BIPIA document's clean and poisoned forms always land in the same split —
-verified zero leaks across 901 document groups. Self-authored rows merge
-in at training time (`curated + self_authored`), not written into the
-split files themselves.
+rows, document-group-aware stratified split so a BIPIA document's clean
+and poisoned forms always land in the same split — verified zero leaks
+across 901 document groups. Self-authored rows merge in at training time
+(`curated + self_authored`), not written into the split files themselves.
 
 **Red-team probe corpus**: `data/redteam/seeds.jsonl` — 35 hand-authored/
-adapted seeds across all 9 `InjectionTechnique` categories (D10's
-taxonomy), separate from training data by design — only *confirmed
-bypasses* get harvested into training-shaped examples
-(`data/redteam/harvested*.jsonl`, see Results below).
+adapted seeds across all 9 `InjectionTechnique` categories, separate from
+training data by design — only *confirmed bypasses* get harvested into
+training-shaped examples (`data/redteam/harvested*.jsonl`, see Results
+below).
 
 License obligations (what requires attribution, what requires
 share-alike, exact per-source row counts) are in `LICENSE-THIRD-PARTY.md`
@@ -107,9 +105,8 @@ by `tests/`, not run directly).
 
 1. **Build the dataset**: `python3 scripts/build_curated_pool.py` (add
    `--pull` to also re-fetch each public source first — needs `hf auth
-   login` for the gated sources; see `docs/DATA_SOURCES.md`), then
-   `python3 scripts/split_curated_pool.py` to materialize
-   `data/processed/{train,val,test}.jsonl`.
+   login` for the gated sources), then `python3 scripts/split_curated_pool.py`
+   to materialize `data/processed/{train,val,test}.jsonl`.
 2. **Train the primary detector**:
    ```
    python3 scripts/train_primary.py --success-criterion "..." \
@@ -142,9 +139,9 @@ by `tests/`, not run directly).
 
 ## Results
 
-Full derivation, investigation trails, and honest corrections for every
-number below live in `docs/ISSUES.md` and `docs/DECISIONS.md` — this is a
-summary table, not a substitute for reading those if you want the *why*.
+This is a summary table. Full derivation, investigation trails, and
+honest corrections for every number below are in the accompanying
+`REPORT.md` write-up.
 
 ### Primary model — in-distribution metrics
 
@@ -163,7 +160,7 @@ numerics) is correct:
 
 The two independent runs land within a few thousandths of each other on
 every metric — strong convergent evidence the pipeline (and specifically
-the fp32 dtype fix, `docs/ISSUES.md` ISSUE-3) is correct and
+an fp32 dtype fix made during development) is correct and
 hardware-independent, not an artifact of one environment.
 
 ### Red-team — base pass
@@ -185,25 +182,25 @@ different question than the eval report's headline metric):
 | needle_in_haystack | see below — blended number is misleading, decomposed |
 | low_resource_language | 62.5% (5/8) |
 
-**`needle_in_haystack` needed correction, not just measurement**
-(`docs/ISSUES.md` ISSUE-9): the original 3 seeds placed their injected
-instruction near the document midpoint, past the model's 512-token
-truncation window for the two longest seeds — the model never saw the
-payload for those, so the raw bypass rate was measuring truncation, not
-detection. Fixed by splitting the metric: **in-window (payload survived
-truncation) bypass rate = 0.0%** — zero evidence of a real semantic
-weakness; **out-of-window bypass rate = 100%**, but that's tautological
-(no signal reaches the classifier on those inputs) and is, if anything,
-evidence for a longer-context architecture rather than a training
-problem. Full methodology in ISSUE-9.
+**`needle_in_haystack` needed correction, not just measurement**: the
+original 3 seeds placed their injected instruction near the document
+midpoint, past the model's 512-token truncation window for the two
+longest seeds — the model never saw the payload for those, so the raw
+bypass rate was measuring truncation, not detection. Fixed by splitting
+the metric: **in-window (payload survived truncation) bypass rate =
+0.0%** — zero evidence of a real semantic weakness; **out-of-window
+bypass rate = 100%**, but that's tautological (no signal reaches the
+classifier on those inputs) and is, if anything, evidence for a
+longer-context architecture rather than a training problem. Full
+methodology in `REPORT.md`.
 
 **`low_resource_language` is a real, substantive weakness**, not an
 artifact — held at 62.5% (5/8) even after adding 5 new, genuinely
 native-authored seeds (Slovenian, Basque, Javanese confirmed bypassing;
 Somali, Welsh caught) specifically to rule out the original 3 seeds'
-machine-translation quality as the explanation (`docs/DECISIONS.md` D32).
+machine-translation quality as the explanation.
 
-### Red-team — automated escalation loop (LLM-mutation, D10)
+### Red-team — automated escalation loop (LLM-mutation)
 
 A static single-shot probe significantly overstates robustness on most
 techniques. Each seed the base pass caught was mutated (Gemini,
@@ -231,10 +228,10 @@ robustness. 15 confirmed bypasses harvested (base + escalation combined,
 
 ### Harvest-retrain — result, reported honestly including what's unresolved
 
-Warm-started from `epoch_3` (not retrained from vanilla — see
-`docs/DECISIONS.md` D31 for the reasoning, including why that call was
-initially made the other way and then corrected), 2 epochs, on
-curated + self_authored + the 15-example harvest, run on Colab given the
+Warm-started from `epoch_3` (not retrained from vanilla — see `REPORT.md`
+for the reasoning, including why that call was initially made the other
+way and then corrected), 2 epochs, on curated + self_authored + the
+15-example harvest, run on Colab given the
 data volume relative to the ~10,433-row pool (~0.1%) didn't justify the
 time cost of a full retrain locally:
 
@@ -260,13 +257,13 @@ noise at this data scale, not a clear signal either way.
   matters, since the weakness was only ever exposed by mutation. Properly
   answering "did the retrain help" here requires re-running escalation
   against the retrained checkpoint, which was **not done, under explicit
-  time constraints** (`docs/DECISIONS.md` D31). Stated as a known
-  limitation, not glossed over as either a success or a failure.
+  time constraints**. Stated as a known limitation, not glossed over as
+  either a success or a failure.
 
 ## Artifacts
 
-Per `docs/DECISIONS.md` D33: **datasets are committed directly in this
-repo** (`data/processed/`, `data/redteam/`) — see `LICENSE-THIRD-PARTY.md`
+**Datasets are committed directly in this repo**
+(`data/processed/`, `data/redteam/`) — see `LICENSE-THIRD-PARTY.md`
 for per-source license/attribution obligations (the dataset folder is
 mixed-license, not covered by this repo's own `LICENSE`). **Trained model
 weights are published on HuggingFace Hub**:
@@ -278,9 +275,9 @@ weights are published on HuggingFace Hub**:
   (warm-started from the primary checkpoint, 2 epochs on 15 harvested
   red-team bypasses — explicitly **not** the primary model; its own model
   card states the small eval regression and the unresolved
-  re-escalation-test limitation, D31, rather than glossing over either)
+  re-escalation-test limitation rather than glossing over either)
 
-Data commit: `8e898ab` on `feature/primary-detector-redteam`.
+Data commit: `8e898ab` (merged into `develop` at `93bdcda`).
 
 ## License
 
@@ -300,6 +297,6 @@ assignment — this README is setup + results, not the write-up itself.
 
 ## Citations
 
-See `docs/DECISIONS.md`, `docs/CITATIONS.md`, and `docs/DATA_SOURCES.md`
-for full citations of every paper, dataset, and repo this work builds on,
-with a one-line note on what was taken vs. what was implemented ourselves.
+See `docs/CITATIONS.md` for full citations of every paper, dataset, and
+repo this work builds on, with a one-line note on what was taken vs. what
+was implemented ourselves.

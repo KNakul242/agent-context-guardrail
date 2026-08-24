@@ -43,7 +43,7 @@ that code docstrings can point to — don't renumber existing entries.
   D12 — training lineage is fully separate); used only as cited facts
   motivating our own architecture/eval decisions, and as an eval-only
   baseline we benchmark against, never train on or from.
-- **Used in**: `docs/DECISIONS.md` D6, D7.
+- **Used in**: D6, D7.
 - **Verification status**: fetched and quoted directly from the primary
   source (not a secondhand paraphrase) on the date this project's docs were
   audited. Re-check before final write-up submission in case the model card
@@ -62,7 +62,7 @@ that code docstrings can point to — don't renumber existing entries.
   reimplementation of this paper's specific GCG/AutoDAN-based adaptive
   attack methods — it borrows the *principle* (test adaptively, not just
   statically) rather than the specific optimizer.
-- **Used in**: `docs/DECISIONS.md` D2, D10.
+- **Used in**: D2, D10.
 - **Verification status**: confirmed via multiple independent sources
   including ACL Anthology and arXiv abstract page. Correctly cited.
 
@@ -81,7 +81,7 @@ that code docstrings can point to — don't renumber existing entries.
   problem statement's non-100%-LLM-generated requirement), using this
   paper's technique taxonomy as a reference list, not its literal test
   prompts.
-- **Used in**: `docs/DECISIONS.md` D10.
+- **Used in**: D10.
 - **Verification status**: confirmed, correct title/authors/venue/arXiv ID.
 
 ### C4 — Fairoze, Garg, Lee, Wang (2025), "Bypassing Prompt Guards in
@@ -97,7 +97,7 @@ that code docstrings can point to — don't renumber existing entries.
   paper's cipher-based timed-release encoding scheme (which targets
   full jailbreak prompts on production chat platforms, a different setting
   than our tool-output classifier).
-- **Used in**: `docs/DECISIONS.md` D7, D10.
+- **Used in**: D7, D10.
 - **Verification status**: confirmed, correct title/authors/arXiv ID.
 
 ---
@@ -132,7 +132,7 @@ checks, not required (D20).
 - **Independent work**: our schema, dataset, and detector are our own
   construction; this paper is cited for the concept definition, not reused
   as data or code.
-- **Used in**: `docs/DECISIONS.md` D2.
+- **Used in**: D2.
 - **Verification status**: confirmed via arXiv, ACM DL, and independent
   corroboration across multiple secondary sources (OWASP LLM01, Microsoft
   MSRC's own indirect-injection defense writeup, Wikipedia's prompt
@@ -190,7 +190,7 @@ checks, not required (D20).
 - **Independent work**: none of these are training-lineage reuse (D5/D12
   unaffected — these are data sources, not weights or soft-labels); used as
   training/eval data per D2's public-source strategy.
-- **Used in**: `docs/DECISIONS.md` D14, D19; `LICENSE-THIRD-PARTY.md`.
+- **Used in**: D14, D19; `LICENSE-THIRD-PARTY.md`.
 - **Verification status**: fully confirmed by direct fetch of each dataset
   card (not secondhand). No longer pending.
 
@@ -235,7 +235,7 @@ checks, not required (D20).
   therefore by which license actually governs each row: EmailQA
   (MIT) 1,434 rows, TableQA + CodeQA (CC BY-SA 4.0) 3,067 rows. Full
   per-domain breakdown in `LICENSE-THIRD-PARTY.md`.
-- **Used in**: `docs/DECISIONS.md` D19, D22; `src/data/sources/bipia.py`;
+- **Used in**: D19, D22; `src/data/sources/bipia.py`;
   `LICENSE-THIRD-PARTY.md`.
 - **Verification status**: fully confirmed — repo README and LICENSE file
   both fetched and read directly.
@@ -254,7 +254,7 @@ checks, not required (D20).
 - **Not used as training data** — see D19: no benign class exists in this
   dataset (attack templates only), so it doesn't fit our schema's paired
   structure without an unrelated, non-matched benign source.
-- **Used in**: `docs/DECISIONS.md` D19.
+- **Used in**: D19.
 - **Verification status**: fully confirmed — GitHub repo and paper
   abstract both fetched directly. License not stated in what was fetched;
   not used, so not blocking.
@@ -275,7 +275,7 @@ checks, not required (D20).
   paper (Agent-Sentry Bench) independently criticizes it as having too few
   hand-written tasks to train a structural classifier — external
   corroboration, not just our own assessment.
-- **Used in**: `docs/DECISIONS.md` D19, D20.
+- **Used in**: D19, D20.
 - **Verification status**: fully confirmed — GitHub repo, paper text, and
   license statement all fetched directly.
 
@@ -296,7 +296,7 @@ checks, not required (D20).
   independently confirmed by us — flagging explicitly, since the
   submission counts above ARE self-verified (fetched from the paper's own
   appendix) and the two shouldn't be treated at the same confidence level.
-- **Used in**: `docs/DECISIONS.md` D19.
+- **Used in**: D19.
 - **Verification status**: submission/annotation counts confirmed by
   direct fetch of the paper appendix. Participant count NOT independently
   confirmed — secondhand only.
@@ -325,14 +325,12 @@ checks, not required (D20).
   project's model scale (142M params, full retrain measured in hours, not
   weeks) where the compute-cost argument doesn't hold the way it does for
   much larger models.
-- **Independent work**: the final methodology call (see
-  `docs/DECISIONS.md` — logged alongside the harvest-retrain decision) is
+- **Independent work**: the final methodology call (logged alongside the harvest-retrain decision) is
   our own, weighing this generalization-risk finding against this
   project's specific constraints (harvest size relative to pool size, time
   budget, and the stated goal of the retrain) — not a mechanical
   application of the paper's recommendation.
-- **Used in**: harvest-retrain methodology decision (`docs/DECISIONS.md`,
-  Phase 1).
+- **Used in**: harvest-retrain methodology decision (Phase 1).
 - **Verification status**: Ash & Adams fetched directly (arXiv/NeurIPS
   proceedings PDF, primary source). The three supporting links are search
   summaries, not independently fetched and read in full — treat as
@@ -358,11 +356,11 @@ checks, not required (D20).
   flat training data, and MCP-SafetyBench specifically crosses from
   "compute" into "infrastructure" cost (D20) relative to already-adequate
   existing sources.
-- **Used in**: `docs/DECISIONS.md` D20.
+- **Used in**: D20.
 - **Verification status**: all three fully confirmed real via direct
   fetch (GitHub repos, arXiv abstracts, or OpenReview page). Excluded on
   cost/category grounds, not citation-uncertainty grounds.
-- **Used in**: `docs/DECISIONS.md` D14, `docs/DATA_SOURCES.md`.
+- **Used in**: D14.
 - **Verification status**: dataset existence, scale, and schema confirmed
   directly from HuggingFace dataset pages. Exact license field for the
   latter two needs direct confirmation on the HF page itself in Phase 0

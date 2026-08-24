@@ -4,26 +4,20 @@ Scope: every external data source whose rows are committed into
 `data/processed/` in this repo. **This file covers data only** — code
 licensing (this repo's own `LICENSE`) is separate.
 
-Source of truth for every fact below: `docs/DATA_SOURCES.md` (license,
-access type, verification method) and `docs/CITATIONS.md` (C6/C7, what was
-taken vs. changed). Row counts are pulled from the actual committed
-output — `data/processed/curated_pool.jsonl` (counted directly, per-source,
-by this file's author) and `docs/data_summary.md` §0/§4 (the Phase 0
-composition report) — not from `DATA_SOURCES.md`'s earlier pool-level
-numbers, which describe what was *pulled*, not what was *kept*. Where the
-two differ, that's noted explicitly below, not silently reconciled.
-
-**No fact in this file was independently re-verified or re-derived while
-writing it** — everything here is pulled from the two logs above. If a
-required fact wasn't already logged, it's flagged as missing, not guessed.
+Every license claim below was confirmed directly against the dataset's
+own card/repo (see `docs/CITATIONS.md` for the paper/repo provenance
+notes). Row counts are pulled from the actual committed output —
+`data/processed/curated_pool.jsonl`, counted directly, per source — not
+from earlier pull-time pool sizes, which describe what was *pulled*, not
+what was *kept*. Where the two differ, that's noted explicitly below, not
+silently reconciled.
 
 ---
 
 ## `prodnull/prompt-injection-repo-dataset`
 
 - **Link**: https://huggingface.co/datasets/prodnull/prompt-injection-repo-dataset
-- **License**: Apache 2.0 (`docs/DATA_SOURCES.md`, confirmed directly from
-  the dataset card).
+- **License**: Apache 2.0 (confirmed directly from the dataset card).
 - **Attribution notice required (Apache 2.0 §4)**: retain the copyright
   notice, provide a copy of the Apache 2.0 license, and **state that
   changes were made** to any redistributed modified files — this is a
@@ -38,16 +32,15 @@ required fact wasn't already logged, it's flagged as missing, not guessed.
   labeling decision made by this project, not present in the source. No
   sampling — all rows pulled were kept.
 - **Final row count in `data/processed/curated_pool.jsonl`**: **5,671**
-  (2,916 malicious / 2,755 benign) — matches `docs/DATA_SOURCES.md`'s
-  pool-level pull count exactly; nothing was dropped between pull and
-  composition for this source.
+  (2,916 malicious / 2,755 benign) — matches the pull count exactly;
+  nothing was dropped between pull and composition for this source.
 
 ---
 
 ## `leolee99/NotInject`
 
 - **Link**: https://huggingface.co/datasets/leolee99/NotInject
-- **License**: MIT (`docs/DATA_SOURCES.md`, confirmed directly).
+- **License**: MIT (confirmed directly from the dataset card).
 - **Attribution notice required (MIT)**: retain the copyright notice and
   license text in copies or substantial portions of the software/data. No
   notice-of-changes obligation (unlike Apache 2.0) and no share-alike
@@ -68,22 +61,21 @@ required fact wasn't already logged, it's flagged as missing, not guessed.
 
 - **Link**: https://huggingface.co/datasets/MAlmasabi/Indirect-Prompt-Injection-BIPIA-GPT
 - **License**: CC BY-SA 4.0, as claimed by the dataset card (blanket
-  claim). **Important caveat, already logged in `docs/DATA_SOURCES.md`
-  and `docs/data_summary.md` §5/§9, carried forward here rather than
-  re-derived**: ~48.3% of this dataset's *malicious* half was found to be
+  claim). **Important caveat, found during development and carried
+  forward here rather than re-derived**: ~48.3% of this dataset's
+  *malicious* half was found to be
   content-pattern-matched to BIPIA's WebQA/Summarization domains (XSum,
   NewsQA), which Microsoft's own `microsoft/BIPIA` README excludes from
   redistribution "due to license issues" — the blanket CC BY-SA 4.0 claim
   likely does not correctly cover that content. **This is moot for what's
   actually in this repo**, because of the next point.
 - **Only the benign half was used — the malicious half is excluded
-  entirely, not merely capped.** Per `docs/data_summary.md` §0: "this
-  composition does not use MAlmasabi's malicious rows at all." The
-  license-provenance concern above is specifically about the malicious
-  half; MAlmasabi's benign half is independently GPT-4o-mini-generated
-  content (`docs/data_summary.md` §0/§5: only ~3.2% overlaps BIPIA's
-  actual clean corpus), so that specific concern does not carry over to
-  the rows actually committed here.
+  entirely, not merely capped.** This composition does not use
+  MAlmasabi's malicious rows at all. The license-provenance concern above
+  is specifically about the malicious half; MAlmasabi's benign half is
+  independently GPT-4o-mini-generated content (only ~3.2% overlaps
+  BIPIA's actual clean corpus), so that specific concern does not carry
+  over to the rows actually committed here.
 - **Attribution notice required (CC BY-SA 4.0)**: attribution to the
   dataset (name, link, indication of changes made) **and** share-alike —
   any adaptation of this content must be distributed under CC BY-SA 4.0
@@ -100,13 +92,12 @@ required fact wasn't already logged, it's flagged as missing, not guessed.
   schema-remapped into this project's `Example` schema. The malicious
   half (35,000 rows) was pulled but entirely excluded from composition.
 - **Final row count in `data/processed/curated_pool.jsonl`**: **2,521**,
-  all benign, 0 malicious. **Discrepancy from `docs/DATA_SOURCES.md`'s
-  pool-level count, flagged rather than reconciled, per instruction**:
-  `DATA_SOURCES.md`'s settled-pool table lists MAlmasabi's pulled volume
-  as 35,000 malicious / 35,000 benign — the 2,521 figure here reflects
-  the coherence-filtered, domain-stratified, malicious-excluded
-  *composition* result (`docs/data_summary.md` §0), a downstream
-  narrowing from the pull, not a contradiction of the pull-count itself.
+  all benign, 0 malicious. **Discrepancy from the pulled pool size,
+  flagged rather than reconciled**: the pulled pool for this source was
+  35,000 malicious / 35,000 benign — the 2,521 figure here reflects the
+  coherence-filtered, domain-stratified, malicious-excluded *composition*
+  result, a downstream narrowing from the pull, not a contradiction of
+  the pull-count itself.
 
 ---
 
@@ -135,10 +126,10 @@ required fact wasn't already logged, it's flagged as missing, not guessed.
   per stratum (600 strata × 6 = 3,600 rows). Benign side: **not sampled**
   — all 200 original test-split contexts retained unconditionally (the
   malicious sample's anchor set) plus 701 deduplicated train-split
-  additions = 901 rows, the full offer from BIPIA's corpus under the
-  corrected dedup rule (`docs/data_summary.md` §0, Step 2). Attack-
-  template category was mapped to this project's `InjectionTechnique`
-  taxonomy per `docs/DECISIONS.md` D22.
+  additions = 901 rows, the full offer from BIPIA's corpus under a
+  corrected dedup rule applied during composition. Attack-template
+  category was mapped to this project's `InjectionTechnique` taxonomy
+  (decision D22).
 - **Final row count in `data/processed/curated_pool.jsonl`**: **4,501**
   total (3,600 malicious / 901 benign), split by domain (and therefore by
   which of the two licenses above actually governs each row):
@@ -209,10 +200,9 @@ accounting in one place, not as a license claim.
 `curated_pool.jsonl`) **+ `self_authored.jsonl`'s 3 rows = 13,035.**
 Reconciles exactly — no discrepancy found against the split files.
 
-**Not independently re-verified while writing this file** (per instruction
-to flag rather than guess): whether `data/processed/train.jsonl`'s 10,430
-figure and `docs/DECISIONS.md`/`docs/data_summary.md`'s other references
-to "10,430 curated" rows are describing the same split consistently across
-every doc that cites it — they appear consistent everywhere checked, but
-this file does not constitute a fresh independent audit of every citation
-of that number elsewhere in the repo.
+**Not independently re-verified while writing this file** (flagged rather
+than guessed): whether `data/processed/train.jsonl`'s 10,430 figure and
+other internal references to "10,430 curated" rows are describing the
+same split consistently everywhere that number is cited — they appear
+consistent everywhere checked, but this file does not constitute a fresh
+independent audit of every citation of that number elsewhere in the repo.

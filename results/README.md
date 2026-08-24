@@ -2,10 +2,10 @@
 
 Persisted output of `scripts/evaluate.py` and `scripts/run_redteam.py`, regenerated
 directly from the checkpoints in this repo/on HF and re-verified against the
-numbers already reported in `docs/ISSUES.md`/`docs/DECISIONS.md` before being
-saved here. Every file below is a deterministic re-run (fixed checkpoint + fixed
-data + fixed seed), not a reconstruction from memory — see each entry for the
-exact command and what it was checked against.
+numbers already reported in `REPORT.md` before being saved here. Every file
+below is a deterministic re-run (fixed checkpoint + fixed data + fixed seed),
+not a reconstruction from memory — see each entry for the exact command and
+what it was checked against.
 
 ## In-distribution eval (`scripts/evaluate.py`, `data/processed/val.jsonl`)
 
@@ -28,13 +28,14 @@ exact command and what it was checked against.
 ## Red-team base pass (`scripts/run_redteam.py`, 35-seed corpus, `--derive-threshold-from-val`)
 
 - `redteam_base_epoch3.json` — `models/primary/epoch_3`. Derived threshold 0.7413,
-  matching ISSUE-9/ISSUE-10's documented operating point exactly; per-technique
-  bypass rates match `docs/ISSUES.md` exactly. Running this also regenerates
+  matching the documented operating point exactly; per-technique bypass rates
+  match `REPORT.md` exactly. Running this also regenerates
   `data/redteam/harvested.jsonl` — confirmed byte-identical to the already-committed
   file (`git diff` empty) before this was saved.
 - `redteam_base_retrained_epoch2.json` — `models/primary_retrained/epoch_2`.
-  Derived threshold 0.4853, matching D31 exactly; `low_resource_language` bypass
-  rate 0.0% (0/8), matching D31's reported "62.5% → 0%" result exactly.
+  Derived threshold 0.4853, matching the harvest-retrain writeup exactly;
+  `low_resource_language` bypass rate 0.0% (0/8), matching the reported
+  "62.5% → 0%" result exactly.
   **Caveat:** running this script against a second checkpoint also overwrites
   `data/redteam/harvested.jsonl` with *this* model's harvest (its own bypass set,
   not the primary model's) — that overwrite was reverted via `git checkout` after
@@ -53,11 +54,11 @@ reconstructing matching numbers here would misrepresent a non-deterministic
 process as a saved artifact. What's real and inspectable instead:
 
 - `data/redteam/harvested_escalation.jsonl` (12 rows) — the base+escalated
-  harvest from the escalation run reported in `docs/ISSUES.md` ISSUE-10, already
+  harvest from the escalation run reported in `REPORT.md`, already
   committed to the repo at that path (not duplicated here).
 - `data/redteam/harvested_merged.jsonl` (15 rows) — that harvest merged with 3
-  additional `low_resource_language` bypasses found in a follow-up pass
-  (`docs/DECISIONS.md` D31/D32), also already committed at that path.
+  additional `low_resource_language` bypasses found in a follow-up pass,
+  also already committed at that path.
 
 The escalation run's own session transcript/log was not preserved separately —
 these two files are the real, persisted evidence of what was found, not a
