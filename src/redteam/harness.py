@@ -184,6 +184,38 @@ def escalate(seed: RedTeamSeed, prior_results: List[RedTeamResult], llm_call: Ll
     return llm_call(prompt).strip()
 
 
+_REFUSAL_PHRASES = (
+    "i cannot", "i can't", "i can not", "i'm not able to", "i am not able to",
+    "i won't", "i will not", "cannot assist", "can't assist", "cannot help",
+    "can't help", "unable to help", "unable to assist", "not able to help",
+    "not able to assist", "against my guidelines", "against my policy",
+)
+
+
+def is_degenerate_mutation(original_content: str, mutated_content: str) -> bool:
+    """Peer-review finding: escalate()'s LLM output was harvested into
+    training data with zero validation -- a refusal or empty/truncated
+    response that happens to score BENIGN would be indistinguishable from
+    a genuine bypass, silently poisoning the harvest-retrain set (and
+    corrupting the confirmed-bypass count a retrain-worth-it decision is
+    based on). Three cheap, real checks: empty/whitespace-only, far
+    shorter than the original (a genuine escalating mutation elaborates on
+    an attack, it doesn't compress it -- half-length is a generous floor,
+    not a tight one), or matches common refusal phrasing. Not exhaustive
+    (a determined bad response could dodge all three), but catches the
+    concrete failure mode the peer review flagged, cheaply, with no live
+    call of its own."""
+    stripped = mutated_content.strip()
+    if not stripped:
+        return True
+    if len(stripped) < len(original_content.strip()) * 0.5:
+        return True
+    lowered = stripped.lower()
+    if any(phrase in lowered for phrase in _REFUSAL_PHRASES):
+        return True
+    return False
+
+
 def run_escalation_loop(
     seed: RedTeamSeed,
     predict_fn: PredictFn,
@@ -218,6 +250,13 @@ def run_escalation_loop(
         try:
             mutated_content = escalate(current, history, llm_call)
         except Exception:
+            return history
+        # Peer-review finding: a degenerate mutation (empty, truncated, or
+        # a refusal) must never reach predict_fn -- if it happened to score
+        # BENIGN, it would be indistinguishable from a genuine bypass and
+        # get harvested as mislabeled training data. Stop here, same as
+        # the llm_call-exception case above, rather than propagate it.
+        if is_degenerate_mutation(current.content, mutated_content):
             return history
         current = RedTeamSeed(
             seed_id=f"{seed.seed_id}-escalate-r{round_num + 1}",
